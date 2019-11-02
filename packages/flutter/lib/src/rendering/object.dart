@@ -43,6 +43,57 @@ class ParentData {
 /// Used by many of the methods of [PaintingContext].
 typedef PaintingContextCallback = void Function(PaintingContext context, Offset offset);
 
+class _PictureLayerPainter {
+  _PictureLayerPainter(this.renderer, [this.offset = Offset.zero]);
+
+  final RenderObject renderer;
+  final Offset offset;
+
+  @override
+  int get hashCode => hashValues(renderer, offset);
+
+  @override
+  bool operator ==(dynamic other) {
+    if (other is _PictureLayerPainter) {
+      return renderer == other.renderer && offset == other.offset;
+    }
+    return false;
+  }
+}
+
+class _PotentialPainter {
+  _PotentialPainter(RenderObject renderer, [Offset offset = Offset.zero])
+      : painter = _PictureLayerPainter(renderer, offset),
+        isDirty = renderer._needsPaint;
+
+  _PotentialPainter._none() : painter = null, isDirty = true;
+
+  final _PictureLayerPainter painter;
+  final bool isDirty;
+
+  static final _PotentialPainter noPainter = _PotentialPainter._none();
+}
+
+class _PaintedPictureLayer extends PictureLayer {
+  _PaintedPictureLayer(Rect canvasBounds) : super(canvasBounds);
+
+  final List<_PictureLayerPainter> _painters = <_PictureLayerPainter>[];
+  _PaintedPictureLayer _nextSaved;
+
+  void add(_PictureLayerPainter painter) => _painters.add(painter);
+
+  bool paintersMatch(_PaintedPictureLayer other) {
+    if (other._painters.length != _painters.length)
+      return false;
+
+    for (int i = 0; i < _painters.length; i++)
+      if (_painters[i] != other._painters[i])
+        return false;
+
+    return true;
+  }
+}
+
 /// A place to paint.
 ///
 /// Rather than holding a canvas directly, [RenderObject]s paint using a painting
@@ -65,11 +116,12 @@ class PaintingContext extends ClipContext {
   /// Typically only called by [PaintingContext.repaintCompositedChild]
   /// and [pushLayer].
   @protected
-  PaintingContext(this._containerLayer, this.estimatedBounds)
+  PaintingContext(this._containerLayer, this.estimatedBounds, [this._reusablePictureLayers])
     : assert(_containerLayer != null),
       assert(estimatedBounds != null);
 
   final ContainerLayer _containerLayer;
+  final _PaintedPictureLayer _reusablePictureLayers;
 
   /// An estimate of the bounds within which the painting context's [canvas]
   /// will record painting commands. This can be useful for debugging.
@@ -78,6 +130,25 @@ class PaintingContext extends ClipContext {
   ///
   /// The [estimatedBounds] rectangle is in the [canvas] coordinate system.
   final Rect estimatedBounds;
+
+  static _PaintedPictureLayer _savePictures(ContainerLayer layer) {
+    _PaintedPictureLayer firstPicture;
+    _PaintedPictureLayer lastPicture;
+    Layer child = layer.firstChild;
+    while (child != null) {
+      final Layer next = child.nextSibling;
+      if (child is _PaintedPictureLayer) {
+        if (firstPicture == null) {
+          firstPicture = child;
+        } else {
+          lastPicture._nextSaved = child;
+        }
+        lastPicture = child;
+      }
+      child = next;
+    }
+    return firstPicture;
+  }
 
   /// Repaint the given render object.
   ///
@@ -113,6 +184,7 @@ class PaintingContext extends ClipContext {
       return true;
     }());
     OffsetLayer childLayer = child._layer as OffsetLayer;
+    _PaintedPictureLayer oldPictures;
     if (childLayer == null) {
       assert(debugAlsoPaintedParent);
       // Not using the `layer` setter because the setter asserts that we not
@@ -123,6 +195,7 @@ class PaintingContext extends ClipContext {
     } else {
       assert(childLayer is OffsetLayer);
       assert(debugAlsoPaintedParent || childLayer.attached);
+      oldPictures = _savePictures(childLayer);
       childLayer.removeAllChildren();
     }
     assert(identical(childLayer, child._layer));
@@ -131,8 +204,16 @@ class PaintingContext extends ClipContext {
       child._layer.debugCreator = child.debugCreator ?? child.runtimeType;
       return true;
     }());
-    childContext ??= PaintingContext(child._layer, child.paintBounds);
+
+    // Callers who pass in a non-null childContext are debug or test subclasses
+    // that will not benefit from remembering PictureLayer objects from one frame
+    // to another, so it will not be an issue if we drop oldPictures on the floor
+    // by eliding the constructor here in that case.
+    childContext ??= PaintingContext(child._layer, child.paintBounds, oldPictures);
+    final _PotentialPainter prevPainter = childContext._currentPaintingChild;
+    childContext._currentPaintingChild = _PotentialPainter(child);
     child._paintWithContext(childContext, Offset.zero);
+    childContext._currentPaintingChild = prevPainter;
 
     // Double-check that the paint method did not replace the layer (the first
     // check is done in the [layer] setter itself).
@@ -177,12 +258,17 @@ class PaintingContext extends ClipContext {
       return true;
     }());
 
+    final _PotentialPainter prevPaintingChild = _currentPaintingChild;
+    _currentPaintingChild = _PotentialPainter(child, offset);
+
     if (child.isRepaintBoundary) {
       stopRecordingIfNeeded();
       _compositeChild(child, offset);
     } else {
       child._paintWithContext(this, offset);
     }
+
+    _currentPaintingChild = prevPaintingChild;
 
     assert(() {
       if (debugProfilePaintsEnabled)
@@ -250,7 +336,10 @@ class PaintingContext extends ClipContext {
   }
 
   // Recording state
-  PictureLayer _currentLayer;
+  _PaintedPictureLayer _currentLayer;
+  bool _currentLayerIsDirty;
+  _PotentialPainter _currentPaintingChild = _PotentialPainter.noPainter;
+  _PictureLayerPainter _currentCanvasPainter;
   ui.PictureRecorder _recorder;
   Canvas _canvas;
 
@@ -263,12 +352,19 @@ class PaintingContext extends ClipContext {
   Canvas get canvas {
     if (_canvas == null)
       _startRecording();
+    if (_currentCanvasPainter != _currentPaintingChild.painter) {
+      _currentLayer.add(_currentCanvasPainter = _currentPaintingChild.painter);
+      if (_currentPaintingChild.isDirty)
+        _currentLayerIsDirty = true;
+    }
     return _canvas;
   }
 
   void _startRecording() {
     assert(!_isRecording);
-    _currentLayer = PictureLayer(estimatedBounds);
+    _currentLayer = _PaintedPictureLayer(estimatedBounds);
+    _currentLayerIsDirty = false;
+    _currentCanvasPainter = null;
     _recorder = ui.PictureRecorder();
     _canvas = Canvas(_recorder);
     _containerLayer.append(_currentLayer);
@@ -306,7 +402,18 @@ class PaintingContext extends ClipContext {
       }
       return true;
     }());
-    _currentLayer.picture = _recorder.endRecording();
+    if (!_currentLayerIsDirty) {
+      _PaintedPictureLayer layer = _reusablePictureLayers;
+      while (layer != null) {
+        if (_currentLayer.paintersMatch(layer)) {
+          _currentLayer.picture = layer.picture;
+          break;
+        }
+        layer = layer._nextSaved;
+      }
+    }
+    _currentLayer.picture ??= _recorder.endRecording();
+    _currentCanvasPainter = null;
     _currentLayer = null;
     _recorder = null;
     _canvas = null;
@@ -382,12 +489,15 @@ class PaintingContext extends ClipContext {
     assert(painter != null);
     // If a layer is being reused, it may already contain children. We remove
     // them so that `painter` can add children that are relevant for this frame.
+    _PaintedPictureLayer oldPictures;
     if (childLayer.hasChildren) {
+      oldPictures = _savePictures(childLayer);
       childLayer.removeAllChildren();
     }
     stopRecordingIfNeeded();
     appendLayer(childLayer);
-    final PaintingContext childContext = createChildContext(childLayer, childPaintBounds ?? estimatedBounds);
+    final PaintingContext childContext =
+      createChildContext(childLayer, childPaintBounds ?? estimatedBounds, oldPictures);
     painter(childContext, offset);
     childContext.stopRecordingIfNeeded();
   }
@@ -396,8 +506,9 @@ class PaintingContext extends ClipContext {
   ///
   /// The `bounds` are estimated paint bounds for debugging purposes.
   @protected
-  PaintingContext createChildContext(ContainerLayer childLayer, Rect bounds) {
-    return PaintingContext(childLayer, bounds);
+  PaintingContext createChildContext(ContainerLayer childLayer, Rect bounds, [_PaintedPictureLayer oldPictures]) {
+    return PaintingContext(childLayer, bounds, oldPictures)
+      .._currentPaintingChild = _currentPaintingChild;
   }
 
   /// Clip further painting using a rectangle.
