@@ -191,6 +191,10 @@ class Canvas {
 
   void DrawPath(const flutter::DlPath& path, const Paint& paint);
 
+  void DrawShadow(const flutter::DlPath& path,
+                  Scalar occluder_height,
+                  const Paint& paint);
+
   void DrawPaint(const Paint& paint);
 
   void DrawLine(const Point& p0,
@@ -407,6 +411,10 @@ class Canvas {
                                    Size corner_radii,
                                    const Paint& paint,
                                    RRectLikeBlurShape& shape);
+
+  bool AttemptDrawBlurredShadow(const flutter::DlPath& path,
+                                Scalar occluder_height,
+                                const Paint& paint);
 
   /// For simple DrawImageRect calls, optimize any draws with a color filter
   /// into the corresponding atlas draw.

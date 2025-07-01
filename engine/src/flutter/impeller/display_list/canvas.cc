@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "display_list/dl_vertices.h"
 #include "display_list/effects/color_filters/dl_blend_color_filter.h"
 #include "display_list/effects/color_filters/dl_matrix_color_filter.h"
 #include "display_list/effects/dl_color_filter.h"
@@ -45,11 +46,15 @@
 #include "impeller/entity/geometry/point_field_geometry.h"
 #include "impeller/entity/geometry/rect_geometry.h"
 #include "impeller/entity/geometry/stroke_path_geometry.h"
+#include "impeller/display_list/dl_vertices_geometry.h"
 #include "impeller/entity/save_layer_utils.h"
 #include "impeller/geometry/color.h"
 #include "impeller/geometry/constants.h"
 #include "impeller/geometry/rstransform.h"
 #include "impeller/renderer/command_buffer.h"
+
+#include "flutter/third_party/skia/src/utils/SkShadowTessellator.h"  // nogncheck
+#include "flutter/third_party/skia/src/core/SkVerticesPriv.h"  // nogncheck
 
 namespace impeller {
 
@@ -338,6 +343,17 @@ void Canvas::DrawPath(const flutter::DlPath& path, const Paint& paint) {
   }
 }
 
+void Canvas::DrawShadow(const flutter::DlPath& path,
+                        Scalar occluder_height,
+                        const Paint& paint)
+{
+  if (AttemptDrawBlurredShadow(path, occluder_height, paint)) {
+    return;
+  }
+
+  DrawPath(path, paint);
+}
+
 void Canvas::DrawPaint(const Paint& paint) {
   Entity entity;
   entity.SetTransform(GetCurrentTransform());
@@ -577,6 +593,108 @@ bool Canvas::AttemptDrawBlurredRRectLike(const Rect& rect,
   }
 
   Restore();
+
+  return true;
+}
+
+bool Canvas::AttemptDrawBlurredShadow(const flutter::DlPath& path,
+                                      Scalar occluder_height,
+                                      const Paint& paint) {
+  if (paint.style != Paint::Style::kFill) {
+    return false;
+  }
+
+  if (paint.color_source || paint.image_filter) {
+    return false;
+  }
+
+  if (!paint.mask_blur_descriptor.has_value()) {
+    return false;
+  }
+
+  // A blur sigma that is not positive enough should not result in a blur.
+  if (paint.mask_blur_descriptor->sigma.sigma <= kEhCloseEnough) {
+    return false;
+  }
+
+  // For symmetrically mask blurred solid Paths, absorb the mask blur and use
+  // a faster SDF approximation.
+  Color path_color = paint.color;
+  if (paint.invert_colors) {
+    path_color = path_color.ApplyColorMatrix(kColorInversion);
+  }
+  if (paint.color_filter) {
+    path_color = GetCPUColorFilterProc(paint.color_filter)(path_color);
+  }
+
+  Paint path_paint = {.color = path_color};
+
+  // TODO - more conditions?
+  auto matrix = GetCurrentTransform();
+  const SkMatrix ctm = SkMatrix::MakeAll(matrix.m[0], matrix.m[4], matrix.m[12],
+                                         matrix.m[1], matrix.m[5], matrix.m[13],
+                                         matrix.m[3], matrix.m[7], matrix.m[15]);
+  SkVector3 z_plane = {0, 0, 10}; // occluder_height};
+  bool transparent = true;  // TODO - what does this mean?
+  auto sk_vertices = SkShadowTessellator::MakeAmbient(path.GetSkPath(), ctm,
+                                                      z_plane, transparent);
+
+  if (!sk_vertices) {
+    return false;
+  }
+
+  auto sk_priv = sk_vertices->priv();
+
+  flutter::DlVertexMode mode;
+  switch (sk_priv.mode()) {
+    case SkVertices::VertexMode::kTriangles_VertexMode:
+      mode = flutter::DlVertexMode::kTriangles;
+      break;
+    case SkVertices::VertexMode::kTriangleStrip_VertexMode:
+      mode = flutter::DlVertexMode::kTriangleStrip;
+      break;
+    case SkVertices::VertexMode::kTriangleFan_VertexMode:
+      mode = flutter::DlVertexMode::kTriangleFan;
+      break;
+    default:
+      return false;
+  }
+
+  flutter::DlVertices::Builder::Flags flags;
+  flags.has_texture_coordinates = sk_priv.hasTexCoords();
+  flags.has_colors = sk_priv.hasColors();
+
+  flutter::DlVertices::Builder builder(mode, sk_priv.vertexCount(), flags,
+                                       sk_priv.hasIndices()
+                                           ? sk_priv.indexCount()
+                                           : 0u);
+
+  auto vertex_sk_points = sk_priv.positions();
+  auto vertex_points =
+      reinterpret_cast<const flutter::DlPoint*>(vertex_sk_points);
+  builder.store_vertices(vertex_points);
+
+  if (flags.has_texture_coordinates) {
+    auto vertex_sk_tex_coords = sk_priv.texCoords();
+    auto vertex_tex_coords =
+        reinterpret_cast<const flutter::DlPoint*>(vertex_sk_tex_coords);
+    builder.store_vertices(vertex_tex_coords);
+  }
+
+  if (flags.has_colors) {
+    auto vertex_sk_colors = sk_priv.colors();
+    auto vertex_colors = reinterpret_cast<const uint32_t*>(vertex_sk_colors);
+    builder.store_colors(vertex_colors);
+  }
+
+  if (sk_priv.hasIndices()) {
+    builder.store_indices(sk_priv.indices());
+  }
+
+  ResetTransform();
+  auto geom = std::make_shared<DlVerticesGeometry>(builder.build(), renderer_);
+  DrawVertices(geom, flutter::DlBlendMode::kSrcOver, path_paint);
+  Transform(matrix);
 
   return true;
 }

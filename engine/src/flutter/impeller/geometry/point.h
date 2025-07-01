@@ -229,6 +229,20 @@ struct TPoint {
     return {x * cos_a - y * sin_a, x * sin_a + y * cos_a};
   }
 
+  /// Return the perpendicular vector turning to the right (Clockwise)
+  /// in the logical coordinate system where X increases to the right and Y
+  /// increases downward.
+  constexpr TPoint PerpendicularRight() const {
+    return {-y, x};
+  }
+
+  /// Return the perpendicular vector turning to the left (Counterclockwise)
+  /// in the logical coordinate system where X increases to the right and Y
+  /// increases downward.
+  constexpr TPoint PerpendicularLeft() const {
+    return {y, -x};
+  }
+
   constexpr Radians AngleTo(const TPoint& p) const {
     return Radians{std::atan2(this->Cross(p), this->Dot(p))};
   }
