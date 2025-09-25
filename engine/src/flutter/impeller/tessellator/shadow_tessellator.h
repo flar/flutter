@@ -5,14 +5,13 @@
 #ifndef FLUTTER_IMPELLER_TESSELLATOR_SHADOW_TESSELLATOR_H_
 #define FLUTTER_IMPELLER_TESSELLATOR_SHADOW_TESSELLATOR_H_
 
-#include "flutter/display_list/geometry/dl_path.h"
-#include "flutter/impeller/display_list/dl_vertices_geometry.h"
+#include "flutter/impeller/geometry/path_source.h"
 
 namespace impeller {
 
 class ShadowTessellator {
  public:
-  std::shared_ptr<DlVerticesGeometry> MakeAmbientShadowVertices(
+  std::shared_ptr<ShadowTessellator> MakeAmbientShadowVertices(
       const PathSource& source,
       Scalar occluder_height,
       const Matrix& matrix);

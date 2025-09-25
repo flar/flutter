@@ -21,6 +21,7 @@
 #include "impeller/base/validation.h"
 #include "impeller/core/formats.h"
 #include "impeller/display_list/color_filter.h"
+#include "impeller/display_list/dl_vertices_geometry.h"
 #include "impeller/display_list/image_filter.h"
 #include "impeller/display_list/skia_conversions.h"
 #include "impeller/entity/contents/atlas_contents.h"
@@ -46,15 +47,14 @@
 #include "impeller/entity/geometry/point_field_geometry.h"
 #include "impeller/entity/geometry/rect_geometry.h"
 #include "impeller/entity/geometry/stroke_path_geometry.h"
-#include "impeller/display_list/dl_vertices_geometry.h"
 #include "impeller/entity/save_layer_utils.h"
 #include "impeller/geometry/color.h"
 #include "impeller/geometry/constants.h"
 #include "impeller/geometry/rstransform.h"
 #include "impeller/renderer/command_buffer.h"
 
-#include "flutter/third_party/skia/src/utils/SkShadowTessellator.h"  // nogncheck
 #include "flutter/third_party/skia/src/core/SkVerticesPriv.h"  // nogncheck
+#include "flutter/third_party/skia/src/utils/SkShadowTessellator.h"  // nogncheck
 
 namespace impeller {
 
@@ -345,8 +345,7 @@ void Canvas::DrawPath(const flutter::DlPath& path, const Paint& paint) {
 
 void Canvas::DrawShadow(const flutter::DlPath& path,
                         Scalar occluder_height,
-                        const Paint& paint)
-{
+                        const Paint& paint) {
   if (AttemptDrawBlurredShadow(path, occluder_height, paint)) {
     return;
   }
@@ -629,13 +628,17 @@ bool Canvas::AttemptDrawBlurredShadow(const flutter::DlPath& path,
 
   Paint path_paint = {.color = path_color};
 
-  // TODO - more conditions?
+  // TODO(jimgraham): more conditions?
   auto matrix = GetCurrentTransform();
-  const SkMatrix ctm = SkMatrix::MakeAll(matrix.m[0], matrix.m[4], matrix.m[12],
-                                         matrix.m[1], matrix.m[5], matrix.m[13],
-                                         matrix.m[3], matrix.m[7], matrix.m[15]);
-  SkVector3 z_plane = {0, 0, 10}; // occluder_height};
-  bool transparent = true;  // TODO - what does this mean?
+  const SkMatrix ctm = SkMatrix::MakeAll(
+      // clang-format off
+      matrix.m[0], matrix.m[4], matrix.m[12],
+      matrix.m[1], matrix.m[5], matrix.m[13],
+      matrix.m[3], matrix.m[7], matrix.m[15]
+      // clang-format on
+  );
+  SkVector3 z_plane = {0, 0, 10};  // occluder_height};
+  bool transparent = true;         // TODO(jimgraham): what does this mean?
   auto sk_vertices = SkShadowTessellator::MakeAmbient(path.GetSkPath(), ctm,
                                                       z_plane, transparent);
 
@@ -664,10 +667,9 @@ bool Canvas::AttemptDrawBlurredShadow(const flutter::DlPath& path,
   flags.has_texture_coordinates = sk_priv.hasTexCoords();
   flags.has_colors = sk_priv.hasColors();
 
-  flutter::DlVertices::Builder builder(mode, sk_priv.vertexCount(), flags,
-                                       sk_priv.hasIndices()
-                                           ? sk_priv.indexCount()
-                                           : 0u);
+  flutter::DlVertices::Builder builder(
+      mode, sk_priv.vertexCount(), flags,
+      sk_priv.hasIndices() ? sk_priv.indexCount() : 0u);
 
   auto vertex_sk_points = sk_priv.positions();
   auto vertex_points =
