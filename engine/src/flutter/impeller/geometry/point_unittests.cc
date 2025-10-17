@@ -354,5 +354,32 @@ TEST(PointTest, PointToSegment) {
       });
 }
 
+TEST(PointTest, CrossProductThreePoints) {
+  // Colinear
+  EXPECT_FLOAT_EQ(Point::Cross(Point(-1, 0), Point(0, 0), Point(1, 0)), 0);
+  EXPECT_FLOAT_EQ(Point::Cross(Point(1, 0), Point(0, 0), Point(-1, 0)), 0);
+
+  // Right turn
+  EXPECT_FLOAT_EQ(Point::Cross(Point(-1, 0), Point(0, 0), Point(0, 1)), 1);
+  EXPECT_FLOAT_EQ(Point::Cross(Point(-2, 0), Point(0, 0), Point(0, 2)), 4);
+
+  // Left turn
+  EXPECT_FLOAT_EQ(Point::Cross(Point(-1, 0), Point(0, 0), Point(0, -1)), -1);
+  EXPECT_FLOAT_EQ(Point::Cross(Point(-2, 0), Point(0, 0), Point(0, -2)), -4);
+
+  // Convenient values for a less obvious left turn.
+  // p1 - p0 == (0, 0) - (3, -4) == (-3, 4)
+  // p2 - p0 == (1, 2) - (3, -4) == (-2, 6)
+  // product of the magnitude of the 2 legs and the sin of their angle
+  // (||(-3, 4)||) * (||(-2, 6)||) * sin(angle)
+  // 5 * sqrt(40) * sin(angle)
+  // angle = arcsin(4 / 5) - arcsin(6 / sqrt(40)) ~= -18.4349
+  // sin(angle) ~= -0.316227766
+  // 5 * sqrt(40) * sin(angle) == -10
+  // The math is cleaner with the cross product:
+  // (-3 * 6) - (-2 * 4) == -18 - -8 == -10
+  EXPECT_FLOAT_EQ(Point::Cross(Point(3, -4), Point(0, 0), Point(1, 2)), -10);
+}
+
 }  // namespace testing
 }  // namespace impeller

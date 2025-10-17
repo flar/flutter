@@ -290,6 +290,17 @@ struct TPoint {
 
   constexpr Type Cross(const TPoint& p) const { return (x * p.y) - (y * p.x); }
 
+  /// Return the cross product representing the sign (turning direction) and
+  /// magnitude (sin of the angle) of the angle from p1 to p2 as viewed from
+  /// p0.
+  ///
+  /// Equivalent to ((p1 - p0).Cross(p2 - p0)).
+  static constexpr Type Cross(const TPoint& p0,
+                              const TPoint& p1,
+                              const TPoint& p2) {
+    return (p1 - p0).Cross(p2 - p0);
+  }
+
   constexpr Type Dot(const TPoint& p) const { return (x * p.x) + (y * p.y); }
 
   constexpr TPoint Reflect(const TPoint& axis) const {
