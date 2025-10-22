@@ -13,21 +13,21 @@ namespace impeller {
 class ShadowVertices {
  public:
   constexpr ShadowVertices(std::vector<Point> vertices,
-                           std::vector<int> indices,
+                           std::vector<uint16_t> indices,
                            std::vector<Color> colors)
       : vertices_(std::move(vertices)),
         indices_(std::move(indices)),
         colors_(std::move(colors)) {}
 
   const std::vector<Point>& GetVertices() const { return vertices_; }
-  const std::vector<int>& GetIndices() const { return indices_; }
+  const std::vector<uint16_t>& GetIndices() const { return indices_; }
   const std::vector<Color>& GetColors() const { return colors_; }
 
   bool IsEmpty() const { return vertices_.empty(); }
 
  private:
   const std::vector<Point> vertices_;
-  const std::vector<int> indices_;
+  const std::vector<uint16_t> indices_;
   const std::vector<Color> colors_;
 };
 

@@ -132,7 +132,7 @@ class PolygonInfo : impeller::PathTessellator::VertexWriter {
   // alphas into a gaussian curve.
   const impeller::Tessellator::Trigs& trigs_;
   std::vector<Point> vertices_;
-  std::vector<int> indices_;
+  std::vector<uint16_t> indices_;
   std::vector<Color> colors_;
 
   // |VertexWriter|
@@ -221,8 +221,8 @@ class PolygonInfo : impeller::PathTessellator::VertexWriter {
   // points.
   void ComputeMesh();
 
-  const UmbraPin* FindBestInset(const UmbraPin& prev,
-                                const UmbraPin& next,
+  const UmbraPin* FindBestInset(const UmbraPin* prev,
+                                const UmbraPin* next,
                                 const UmbraPin* p_cur_inner_pin);
 
   uint16_t AppendFan(const Point& center,
@@ -231,7 +231,7 @@ class PolygonInfo : impeller::PathTessellator::VertexWriter {
                      uint16_t center_index,
                      uint16_t prev_index);
 
-  uint16_t AppendVertex(const Point& vertex, const Color& color);
+  uint16_t AppendVertex(const Point& vertex, Scalar opacity);
 
   void AddTriangle(uint16_t v0, uint16_t v1, uint16_t v2);
 };
@@ -692,10 +692,17 @@ void PolygonInfo::ResolveUmbraIntersections() {
     }
   }
 
-  p_curr_pin = p_head_pin;
-  p_prev_pin = p_curr_pin->pPrev;
-  size_t umbra_vertices = 0u;
-  while (p_head_pin && p_prev_pin != p_curr_pin && p_curr_pin != p_head_pin) {
+  if (!p_head_pin) {
+    is_valid_ = false;
+    return;
+  }
+
+  // The head pin is automatically included as the first point of the umbra
+  // polygon.
+  p_prev_pin = p_head_pin;
+  p_curr_pin = p_head_pin->pNext;
+  size_t umbra_vertices = 1u;
+  while (p_curr_pin != p_head_pin) {
     if (p_prev_pin->umbra_vertex.GetDistanceSquared(p_curr_pin->umbra_vertex) <
         kSubPixelScale * kSubPixelScale) {
       RemovePin(p_curr_pin, &p_head_pin);
@@ -709,7 +716,7 @@ void PolygonInfo::ResolveUmbraIntersections() {
     FML_DCHECK(p_prev_pin == p_curr_pin->pPrev);
   }
 
-  if (p_head_pin && umbra_vertices >= 3u) {
+  if (umbra_vertices >= 3u) {
     umbra_vertices_head_ = p_head_pin;
   } else {
     is_valid_ = false;
@@ -749,19 +756,20 @@ void PolygonInfo::ResolveUmbraIntersections() {
 //   to turn the corners beteween the projected segments.
 void PolygonInfo::ComputeMesh() {
   if (!is_valid_ || !umbra_vertices_head_) {
+    FML_LOG(ERROR) << "is_valid: " << is_valid_ << "umbra_vertices: " << umbra_vertices_head_;
     is_valid_ = false;
     return;
   }
 
-  Color umbra_color = Color::Black().WithAlpha(umbra_size_ / shadow_size_);
-  AppendVertex(centroid_, umbra_color);
+  Scalar umbra_opacity = umbra_size_ / shadow_size_;
+  AppendVertex(centroid_, umbra_opacity);
 
   const UmbraPin* p_inner_point = nullptr;
   uint16_t umbra_index = 0u;
 
-  UmbraPin& prev_pin = pins_.back();
+  UmbraPin* p_prev_pin = &pins_.back();
   uint16_t penumbra_index = AppendVertex(
-      prev_pin.path_vertex - prev_pin.pin_delta, Color::BlackTransparent());
+      p_prev_pin->path_vertex - p_prev_pin->pin_delta, 0.0f);
 
   // We now run through the list of all pins and append points and triangles
   // to our internal vectors.
@@ -779,14 +787,16 @@ void PolygonInfo::ComputeMesh() {
   // the (nearest) points on the umbra polygon to the many points on the
   // outer penumbra. We always insert 3 new indices rather than using a fan
   // format because not all triangles fan out from the same point.
-  for (UmbraPin& cur_pin : pins_) {
+  for (UmbraPin& pin : pins_) {
+    UmbraPin* p_curr_pin = &pin;
     // First make sure we are basing our new penumbra triangles off of
     // the best choice of the inner umbra point.
     const UmbraPin* p_new_inner_point =
-        FindBestInset(prev_pin, cur_pin, p_inner_point);
+        FindBestInset(p_prev_pin, p_curr_pin, p_inner_point);
 
     if (p_new_inner_point == nullptr) {
       // We failed to match the umbra polygon to the outer polygon.
+      FML_LOG(ERROR) << "FindBestInset failed";
       is_valid_ = false;
       return;
     }
@@ -796,7 +806,7 @@ void PolygonInfo::ComputeMesh() {
       // of vertices and, when we have more than one, make a triangle to
       // fill in the inner-most darkest part of the umbra.
       uint16_t new_umbra_index =
-          AppendVertex(p_new_inner_point->umbra_vertex, umbra_color);
+          AppendVertex(p_new_inner_point->umbra_vertex, umbra_opacity);
 
       // Make a triangle with the most recent pair of umbra indices (if we
       // have more than one) and the centroid (which is always at index 0).
@@ -814,42 +824,37 @@ void PolygonInfo::ComputeMesh() {
 
     // Now round the corner from the
     penumbra_index = AppendFan(p_inner_point->umbra_vertex,  //
-                               prev_pin.path_vertex + prev_pin.pin_delta,
-                               prev_pin.path_vertex + cur_pin.pin_delta,
+                               p_prev_pin->path_vertex + p_prev_pin->pin_delta,
+                               p_prev_pin->path_vertex + p_curr_pin->pin_delta,
                                umbra_index, penumbra_index);
-    prev_pin = cur_pin;
+    p_prev_pin = p_curr_pin;
   }
 }
 
 const PolygonInfo::UmbraPin* PolygonInfo::FindBestInset(
-    const UmbraPin& prev,
-    const UmbraPin& next,
-    const UmbraPin* p_initial_inner_pin) {
-  if (p_initial_inner_pin == nullptr) {
-    // First time calling this method, start with the head of the linked
-    // list of "inner/umbra vertex" points.
-    p_initial_inner_pin = umbra_vertices_head_;
+    const UmbraPin* p_prev,
+    const UmbraPin* p_next,
+    const UmbraPin* p_current_inner_pin) {
+  if (p_current_inner_pin == nullptr) {
+    // When pruning the list of pins to make the umbra polygon, the head
+    // pointer was only ever moved forward through the list. So, the very
+    // first path point we process should be "at or before" the first umbra
+    // pin. If the head umbra pin was moved forward fairly far, then its
+    // previous surviving umbra vertex might be closer, so we start there
+    // and let the code below bump the pin forward if the distances suggest
+    // it.
+    p_current_inner_pin = umbra_vertices_head_->pPrev;
   }
-  const UmbraPin* p_cur = p_initial_inner_pin;
-  while (0 > direction_ * Point::Cross(prev.path_vertex, next.path_vertex,
-                                       p_cur->umbra_vertex)) {
-    p_cur = p_cur->pPrev;
-    if (p_cur == p_initial_inner_pin) {
-      // We went all the way around the umbra polygon and failed to find
-      // a suitable candidate.
-      return nullptr;
-    }
-  }
-  while (0 < direction_ * Point::Cross(prev.path_vertex, next.path_vertex,
-                                       p_cur->umbra_vertex)) {
-    p_cur = p_cur->pNext;
-    if (p_cur == p_initial_inner_pin) {
-      // We went all the way around the umbra polygon and failed to find
-      // a suitable candidate.
-      return nullptr;
-    }
-  }
-  return p_cur;
+
+  Scalar curr_distance_squared =
+      p_current_inner_pin->umbra_vertex.GetDistanceSquared(p_prev->path_vertex);
+  UmbraPin* p_next_inner_pin = p_current_inner_pin->pNext;
+  Scalar next_distance_squared =
+      p_next_inner_pin->umbra_vertex.GetDistanceSquared(p_prev->path_vertex);
+
+  return (curr_distance_squared > next_distance_squared)
+      ? p_next_inner_pin
+      : p_current_inner_pin;
 }
 
 // Appends a fan based on center from the relative point in start_delta to
@@ -866,25 +871,26 @@ uint16_t PolygonInfo::AppendFan(const Point& center,
       break;
     }
     uint16_t cur_index =
-        AppendVertex(center + fan_delta, Color::BlackTransparent());
+        AppendVertex(center + fan_delta, 0.0f);
     AddTriangle(center_index, prev_index, cur_index);
     prev_index = cur_index;
   }
   uint16_t cur_index =
-      AppendVertex(center + end_delta, Color::BlackTransparent());
+      AppendVertex(center + end_delta, 0.0f);
   AddTriangle(center_index, prev_index, cur_index);
   return cur_index;
 }
 
 // Appends a vertex and color into the associated std::vectors and returns
 // the index at which the point was inserted.
-uint16_t PolygonInfo::AppendVertex(const Point& vertex, const Color& color) {
+uint16_t PolygonInfo::AppendVertex(const Point& vertex, Scalar opacity) {
+  FML_DCHECK(opacity >= 0.0f && opacity <= 1.0f);
   uint16_t index = vertices_.size();
   FML_DCHECK(index == colors_.size());
   // TODO(jimgraham): Turn this condition into a failure of the tessellation
   FML_DCHECK(index <= std::numeric_limits<uint16_t>::max());
   vertices_.push_back(vertex);
-  colors_.push_back(color);
+  colors_.emplace_back(0.0f, 0.0f, 0.0f, opacity);
   return index;
 }
 

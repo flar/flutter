@@ -12,21 +12,51 @@
 namespace impeller {
 namespace testing {
 
-using flutter::DlPath;
-using flutter::DlRect;
+using namespace flutter;
+
+TEST(ShadowTessellatorTest, RectTest) {
+  Tessellator tessellator;
+  DlPath path = DlPath::MakeRect(DlRect::MakeLTRB(0, 0, 100, 80));
+
+  std::shared_ptr<ShadowVertices> shadow_vertices =
+      ShadowTessellator::MakeAmbientShadowVertices(tessellator, path, 2.0f, {});
+
+  ASSERT_NE(shadow_vertices, nullptr);
+  EXPECT_FALSE(shadow_vertices->IsEmpty());
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 14u);
+  EXPECT_EQ(shadow_vertices->GetColors().size(), 14u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 33u);
+  EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
+}
 
 TEST(ShadowTessellatorTest, EllipseTest) {
   Tessellator tessellator;
-  DlPath path = DlPath::MakeOval(DlRect::MakeLTRB(0, 0, 100, 100));
+  DlPath path = DlPath::MakeOval(DlRect::MakeLTRB(0, 0, 100, 80));
 
-  std::shared_ptr<ShadowVertices> vertices =
+  std::shared_ptr<ShadowVertices> shadow_vertices =
       ShadowTessellator::MakeAmbientShadowVertices(tessellator, path, 2.0f, {});
 
-  ASSERT_NE(vertices, nullptr);
-  EXPECT_FALSE(vertices->IsEmpty());
-  ASSERT_NE(vertices->GetVertices().size(), 0u);
-  ASSERT_NE(vertices->GetColors().size(), 0u);
-  ASSERT_NE(vertices->GetIndices().size(), 0u);
+  ASSERT_NE(shadow_vertices, nullptr);
+  EXPECT_FALSE(shadow_vertices->IsEmpty());
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 198u);
+  EXPECT_EQ(shadow_vertices->GetColors().size(), 198u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 585u);
+  EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
+}
+
+TEST(ShadowTessellatorTest, RoundRectTest) {
+  Tessellator tessellator;
+  DlPath path = DlPath::MakeRoundRectXY(DlRect::MakeLTRB(0, 0, 100, 80), 5, 4);
+
+  std::shared_ptr<ShadowVertices> shadow_vertices =
+      ShadowTessellator::MakeAmbientShadowVertices(tessellator, path, 2.0f, {});
+
+  ASSERT_NE(shadow_vertices, nullptr);
+  EXPECT_FALSE(shadow_vertices->IsEmpty());
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 78u);
+  EXPECT_EQ(shadow_vertices->GetColors().size(), 78u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 225u);
+  EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
 }
 
 }  // namespace testing
