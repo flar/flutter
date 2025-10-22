@@ -756,7 +756,6 @@ void PolygonInfo::ResolveUmbraIntersections() {
 //   to turn the corners beteween the projected segments.
 void PolygonInfo::ComputeMesh() {
   if (!is_valid_ || !umbra_vertices_head_) {
-    FML_LOG(ERROR) << "is_valid: " << is_valid_ << "umbra_vertices: " << umbra_vertices_head_;
     is_valid_ = false;
     return;
   }
@@ -768,8 +767,8 @@ void PolygonInfo::ComputeMesh() {
   uint16_t umbra_index = 0u;
 
   UmbraPin* p_prev_pin = &pins_.back();
-  uint16_t penumbra_index = AppendVertex(
-      p_prev_pin->path_vertex - p_prev_pin->pin_delta, 0.0f);
+  uint16_t penumbra_index =
+      AppendVertex(p_prev_pin->path_vertex - p_prev_pin->pin_delta, 0.0f);
 
   // We now run through the list of all pins and append points and triangles
   // to our internal vectors.
@@ -796,7 +795,6 @@ void PolygonInfo::ComputeMesh() {
 
     if (p_new_inner_point == nullptr) {
       // We failed to match the umbra polygon to the outer polygon.
-      FML_LOG(ERROR) << "FindBestInset failed";
       is_valid_ = false;
       return;
     }
@@ -852,9 +850,9 @@ const PolygonInfo::UmbraPin* PolygonInfo::FindBestInset(
   Scalar next_distance_squared =
       p_next_inner_pin->umbra_vertex.GetDistanceSquared(p_prev->path_vertex);
 
-  return (curr_distance_squared > next_distance_squared)
-      ? p_next_inner_pin
-      : p_current_inner_pin;
+  return (curr_distance_squared > next_distance_squared)  //
+             ? p_next_inner_pin
+             : p_current_inner_pin;
 }
 
 // Appends a fan based on center from the relative point in start_delta to
@@ -870,13 +868,11 @@ uint16_t PolygonInfo::AppendFan(const Point& center,
     if (fan_delta.Cross(end_delta) * direction_ >= 0) {
       break;
     }
-    uint16_t cur_index =
-        AppendVertex(center + fan_delta, 0.0f);
+    uint16_t cur_index = AppendVertex(center + fan_delta, 0.0f);
     AddTriangle(center_index, prev_index, cur_index);
     prev_index = cur_index;
   }
-  uint16_t cur_index =
-      AppendVertex(center + end_delta, 0.0f);
+  uint16_t cur_index = AppendVertex(center + end_delta, 0.0f);
   AddTriangle(center_index, prev_index, cur_index);
   return cur_index;
 }
