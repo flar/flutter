@@ -447,14 +447,16 @@ void PolygonInfo::ComputePinDirectionsAndMinDistanceToCentroid() {
   // segments are processed once even if we start with the last pin.
 
   // First pass, compute the smallest distance to the centroid.
-  UmbraPin& prev_pin = pins_.back();
-  for (UmbraPin& cur_pin : pins_) {
+  UmbraPin* p_prev_pin = &pins_.back();
+  for (UmbraPin& pin : pins_) {
+    UmbraPin* p_curr_pin = &pin;
+
     // Accumulate (min) the distance from the centroid to "this" segment.
     Scalar distance_squared = centroid_.GetDistanceToSegmentSquared(
-        prev_pin.path_vertex, cur_pin.path_vertex);
+        p_prev_pin->path_vertex, p_curr_pin->path_vertex);
     min_umbra_squared = std::min(min_umbra_squared, distance_squared);
 
-    prev_pin = cur_pin;
+    p_prev_pin = p_curr_pin;
   }
 
   umbra_size_ = std::sqrt(min_umbra_squared);
@@ -463,25 +465,28 @@ void PolygonInfo::ComputePinDirectionsAndMinDistanceToCentroid() {
   //
   // We also link all of the pins into a circular linked list so they can be
   // quickly eliminated in the method that resolves intersections of the pins.
-  prev_pin = pins_.back();
-  for (UmbraPin& cur_pin : pins_) {
-    cur_pin.pPrev = &prev_pin;
-    prev_pin.pNext = &cur_pin;
+  p_prev_pin = &pins_.back();
+  for (UmbraPin& pin : pins_) {
+    UmbraPin* p_curr_pin = &pin;
+    p_curr_pin->pPrev = p_prev_pin;
+    p_prev_pin->pNext = p_curr_pin;
 
     // We compute the vector along the path segment from the previous
     // path vertex to this one as well as the unit direction vector
     // that points from that pin towards the center of the shape,
     // perpendicular to that segment.
-    prev_pin.path_delta = cur_pin.path_vertex - prev_pin.path_vertex;
-    Vector2 pin_direction = prev_pin
-                                .path_delta  //
+    p_prev_pin->path_delta = p_curr_pin->path_vertex - p_prev_pin->path_vertex;
+    Vector2 pin_direction = p_prev_pin
+                                ->path_delta  //
                                 .Normalize()
                                 .PerpendicularRight() *
                             direction_;
 
-    prev_pin.pin_delta = pin_direction * umbra_size_;
-    prev_pin.pin_tip = prev_pin.path_vertex + prev_pin.pin_delta;
-    prev_pin.umbra_vertex = prev_pin.pin_tip;
+    p_prev_pin->pin_delta = pin_direction * umbra_size_;
+    p_prev_pin->pin_tip = p_prev_pin->path_vertex + p_prev_pin->pin_delta;
+    p_prev_pin->umbra_vertex = p_prev_pin->pin_tip;
+
+    p_prev_pin = p_curr_pin;
   }
 }
 
@@ -690,14 +695,18 @@ void PolygonInfo::ResolveUmbraIntersections() {
   p_curr_pin = p_head_pin;
   p_prev_pin = p_curr_pin->pPrev;
   size_t umbra_vertices = 0u;
-  while (p_head_pin && p_prev_pin != p_curr_pin) {
+  while (p_head_pin && p_prev_pin != p_curr_pin && p_curr_pin != p_head_pin) {
     if (p_prev_pin->umbra_vertex.GetDistanceSquared(p_curr_pin->umbra_vertex) <
         kSubPixelScale * kSubPixelScale) {
       RemovePin(p_curr_pin, &p_head_pin);
       p_curr_pin = p_curr_pin->pNext;
     } else {
       umbra_vertices++;
+      p_prev_pin = p_curr_pin;
+      p_curr_pin = p_curr_pin->pNext;
     }
+    FML_DCHECK(p_curr_pin == p_prev_pin->pNext);
+    FML_DCHECK(p_prev_pin == p_curr_pin->pPrev);
   }
 
   if (p_head_pin && umbra_vertices >= 3u) {

@@ -33,7 +33,7 @@ class ShadowVertices {
 
 class ShadowTessellator {
  public:
-  std::shared_ptr<ShadowVertices> MakeAmbientShadowVertices(
+  static std::shared_ptr<ShadowVertices> MakeAmbientShadowVertices(
       Tessellator& tessellator,
       const PathSource& source,
       Scalar occluder_height,
