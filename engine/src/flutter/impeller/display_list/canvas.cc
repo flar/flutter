@@ -627,10 +627,9 @@ bool Canvas::AttemptDrawBlurredShadow(const flutter::DlPath& path,
   Paint path_paint = {.color = path_color};
   auto matrix = GetCurrentTransform();
   std::shared_ptr<ShadowVertices> shadow_vertices =
-      ShadowPathGeometry::MakeAmbientShadowVertices(renderer_.GetTessellator(),
-                                                    path, occluder_height,
-                                                    matrix);
-      // ShadowPathGeometry::MakeAmbientShadowVerticesSkia(path, 10, matrix);
+      ShadowPathGeometry::MakeAmbientShadowVertices(
+          renderer_.GetTessellator(), path, occluder_height, matrix);
+  // ShadowPathGeometry::MakeAmbientShadowVerticesSkia(path, 10, matrix);
 
   if (!shadow_vertices) {
     return false;

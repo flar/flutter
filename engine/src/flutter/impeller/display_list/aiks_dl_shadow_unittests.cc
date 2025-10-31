@@ -26,49 +26,49 @@ namespace testing {
 using namespace flutter;
 
 namespace {
-  void DrawShadowMesh(DisplayListBuilder& builder,
-                      const DlPath& path,
-                      Scalar elevation,
-                      Scalar dpr,
-                      bool use_skia) {
-    std::shared_ptr<ShadowVertices> shadow_vertices;
-    DlPaint paint;
-    paint.setDrawStyle(DlDrawStyle::kStroke);
-    if (use_skia) {
+void DrawShadowMesh(DisplayListBuilder& builder,
+                    const DlPath& path,
+                    Scalar elevation,
+                    Scalar dpr,
+                    bool use_skia) {
+  std::shared_ptr<ShadowVertices> shadow_vertices;
+  DlPaint paint;
+  paint.setDrawStyle(DlDrawStyle::kStroke);
+  if (use_skia) {
 #ifndef NDEBUG
-      shadow_vertices = ShadowPathGeometry::MakeAmbientShadowVerticesSkia(
-          path, elevation, {});
-      paint.setColor(DlColor::kGreen());
+    shadow_vertices =
+        ShadowPathGeometry::MakeAmbientShadowVerticesSkia(path, elevation, {});
+    paint.setColor(DlColor::kGreen());
 #else
-      return;
+    return;
 #endif
-    } else {
-      Tessellator tessellator;
-      shadow_vertices = ShadowPathGeometry::MakeAmbientShadowVertices(
-          tessellator, path, elevation, {});
-      ASSERT_TRUE(shadow_vertices);
-      paint.setColor(DlColor::kRed());
-    }
-
-    builder.Save();
-    builder.Translate(0, elevation * dpr * 0.5f);
+  } else {
+    Tessellator tessellator;
+    shadow_vertices = ShadowPathGeometry::MakeAmbientShadowVertices(
+        tessellator, path, elevation, {});
     ASSERT_TRUE(shadow_vertices);
-    auto indices = shadow_vertices->GetIndices();
-    auto vertices = shadow_vertices->GetVertices();
-    DlPathBuilder mesh_builder;
-    for (size_t i = 0; i < shadow_vertices->GetIndexCount(); i += 3) {
-      mesh_builder.MoveTo(vertices[indices[i + 0]]);
-      mesh_builder.LineTo(vertices[indices[i + 1]]);
-      mesh_builder.LineTo(vertices[indices[i + 2]]);
-      mesh_builder.Close();
-    }
-    DlPath mesh_path = mesh_builder.TakePath();
-    builder.DrawPath(mesh_path, paint);
-
-    paint.setColor(paint.getColor().withAlphaF(0.5f));
-    builder.DrawPath(path, paint);
-    builder.Restore();
+    paint.setColor(DlColor::kRed());
   }
+
+  builder.Save();
+  builder.Translate(0, elevation * dpr * 0.5f);
+  ASSERT_TRUE(shadow_vertices);
+  auto indices = shadow_vertices->GetIndices();
+  auto vertices = shadow_vertices->GetVertices();
+  DlPathBuilder mesh_builder;
+  for (size_t i = 0; i < shadow_vertices->GetIndexCount(); i += 3) {
+    mesh_builder.MoveTo(vertices[indices[i + 0]]);
+    mesh_builder.LineTo(vertices[indices[i + 1]]);
+    mesh_builder.LineTo(vertices[indices[i + 2]]);
+    mesh_builder.Close();
+  }
+  DlPath mesh_path = mesh_builder.TakePath();
+  builder.DrawPath(mesh_path, paint);
+
+  paint.setColor(paint.getColor().withAlphaF(0.5f));
+  builder.DrawPath(path, paint);
+  builder.Restore();
+}
 }  // namespace
 
 TEST_P(AiksTest, CanDrawClockwiseTriangleShadow) {

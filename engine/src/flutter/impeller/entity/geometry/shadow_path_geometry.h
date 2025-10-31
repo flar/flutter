@@ -19,7 +19,8 @@ class ShadowVertices {
   static std::shared_ptr<ShadowVertices> Make(std::vector<Point> vertices,
                                               std::vector<uint16_t> indices,
                                               std::vector<Scalar> gaussians) {
-    return std::make_shared<ShadowVertices>(vertices, indices, gaussians);
+    return std::make_shared<ShadowVertices>(
+        std::move(vertices), std::move(indices), std::move(gaussians));
   }
 
   constexpr ShadowVertices(std::vector<Point> vertices,

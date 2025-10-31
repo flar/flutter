@@ -255,9 +255,7 @@ PolygonInfo::PolygonInfo(const impeller::PathSource& source,
                          const Matrix& matrix,
                          Scalar occluder_height,
                          const Tessellator::Trigs& trigs)
-    : occluder_height_(occluder_height),
-      centroid_(0.0f, 0.0f),
-      trigs_(trigs) {
+    : occluder_height_(occluder_height), centroid_(0.0f, 0.0f), trigs_(trigs) {
   Scalar scale = matrix.GetMaxBasisLengthXY();
 
   auto [point_count, contour_count] =
@@ -504,7 +502,7 @@ void PolygonInfo::ComputePinDirectionsAndMinDistanceToCentroid() {
                             direction_;
 
     p_prev_pin->penumbra_delta = pin_direction * penumbra_scale;
-    p_prev_pin->umbra_vertex =
+    p_prev_pin->umbra_vertex =  //
         p_prev_pin->pin_tip =
             p_prev_pin->path_vertex + pin_direction * umbra_size;
 
@@ -921,8 +919,8 @@ void PolygonInfo::PopulateUmbraVertices() {
       p_next_umbra_pin = p_next_umbra_pin->pNext;
 
       // New umbra vertex - append it and remember its index.
-      uint16_t new_umbra_index = AppendVertex(p_curr_umbra_pin->umbra_vertex,
-                                              umbra_gaussian_);
+      uint16_t new_umbra_index =
+          AppendVertex(p_curr_umbra_pin->umbra_vertex, umbra_gaussian_);
       p_curr_umbra_pin->umbra_index = new_umbra_index;
       if (last_umbra_index != 0u) {
         AddTriangle(0u, last_umbra_index, new_umbra_index);
@@ -1006,8 +1004,9 @@ std::shared_ptr<ShadowVertices> ShadowPathGeometry::MakeAmbientShadowVertices(
 
 #ifndef NDEBUG
 std::shared_ptr<ShadowVertices>
-ShadowPathGeometry::MakeAmbientShadowVerticesSkia(
-    const flutter::DlPath& path, Scalar occluder_height, const Matrix& matrix) {
+ShadowPathGeometry::MakeAmbientShadowVerticesSkia(const flutter::DlPath& path,
+                                                  Scalar occluder_height,
+                                                  const Matrix& matrix) {
   const SkMatrix ctm = SkMatrix::MakeAll(
       // clang-format off
       matrix.m[0], matrix.m[4], matrix.m[12],
