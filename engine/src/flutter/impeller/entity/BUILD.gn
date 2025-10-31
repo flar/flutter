@@ -222,6 +222,8 @@ impeller_component("entity") {
     "geometry/round_rect_geometry.h",
     "geometry/round_superellipse_geometry.cc",
     "geometry/round_superellipse_geometry.h",
+    "geometry/shadow_path_geometry.cc",
+    "geometry/shadow_path_geometry.h",
     "geometry/stroke_path_geometry.cc",
     "geometry/stroke_path_geometry.h",
     "geometry/superellipse_geometry.cc",
@@ -280,6 +282,7 @@ impeller_component("entity_unittests") {
     "entity_playground.h",
     "entity_unittests.cc",
     "geometry/geometry_unittests.cc",
+    "geometry/shadow_path_geometry_unittests.cc",
     "render_target_cache_unittests.cc",
     "save_layer_utils_unittests.cc",
   ]
@@ -291,6 +294,7 @@ impeller_component("entity_unittests") {
     "../playground:playground_test",
     "//flutter/display_list/testing:display_list_testing",
     "//flutter/impeller/typographer/backends/skia:typographer_skia_backend",
+    "//flutter/testing",
     "//flutter/txt",
   ]
 }

@@ -320,7 +320,7 @@ void PathTessellator::PathToTransformedFilledVertices(const PathSource& source,
   PathFillWriter path_writer(writer, matrix.GetMaxBasisLengthXY());
   PathPruner pruner(path_writer, false);
   PathTransformer transformer(pruner, matrix);
-  source.Dispatch(pruner);
+  source.Dispatch(transformer);
   pruner.PathEnd();
 }
 

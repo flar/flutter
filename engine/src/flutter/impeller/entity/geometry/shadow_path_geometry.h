@@ -1,0 +1,65 @@
+// Copyright 2013 The Flutter Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+#ifndef FLUTTER_IMPELLER_ENTITY_GEOMETRY_SHADOW_PATH_GEOMETRY_H_
+#define FLUTTER_IMPELLER_ENTITY_GEOMETRY_SHADOW_PATH_GEOMETRY_H_
+
+#ifndef NDEBUG
+#include "flutter/display_list/geometry/dl_path.h"
+#endif
+
+#include "flutter/impeller/geometry/path_source.h"
+#include "flutter/impeller/tessellator/tessellator.h"
+
+namespace impeller {
+
+class ShadowVertices {
+ public:
+  static std::shared_ptr<ShadowVertices> Make(std::vector<Point> vertices,
+                                              std::vector<uint16_t> indices,
+                                              std::vector<Scalar> gaussians) {
+    return std::make_shared<ShadowVertices>(vertices, indices, gaussians);
+  }
+
+  constexpr ShadowVertices(std::vector<Point> vertices,
+                           std::vector<uint16_t> indices,
+                           std::vector<Scalar> gaussians)
+      : vertices_(std::move(vertices)),
+        indices_(std::move(indices)),
+        gaussians_(std::move(gaussians)) {}
+
+  size_t GetVertexCount() const { return vertices_.size(); }
+  size_t GetIndexCount() const { return indices_.size(); }
+
+  const std::vector<Point>& GetVertices() const { return vertices_; }
+  const std::vector<uint16_t>& GetIndices() const { return indices_; }
+  const std::vector<Scalar>& GetGaussians() const { return gaussians_; }
+
+  bool IsEmpty() const { return vertices_.empty(); }
+
+ private:
+  const std::vector<Point> vertices_;
+  const std::vector<uint16_t> indices_;
+  const std::vector<Scalar> gaussians_;
+};
+
+class ShadowPathGeometry {
+ public:
+  static std::shared_ptr<ShadowVertices> MakeAmbientShadowVertices(
+      Tessellator& tessellator,
+      const PathSource& source,
+      Scalar occluder_height,
+      const Matrix& matrix);
+
+#ifndef NDEBUG
+  static std::shared_ptr<ShadowVertices> MakeAmbientShadowVerticesSkia(
+      const flutter::DlPath& source,
+      Scalar occluder_height,
+      const Matrix& matrix);
+#endif
+};
+
+}  // namespace impeller
+
+#endif  // FLUTTER_IMPELLER_ENTITY_GEOMETRY_SHADOW_PATH_GEOMETRY_H_

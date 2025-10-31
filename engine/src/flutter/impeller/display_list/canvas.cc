@@ -46,15 +46,13 @@
 #include "impeller/entity/geometry/line_geometry.h"
 #include "impeller/entity/geometry/point_field_geometry.h"
 #include "impeller/entity/geometry/rect_geometry.h"
+#include "impeller/entity/geometry/shadow_path_geometry.h"
 #include "impeller/entity/geometry/stroke_path_geometry.h"
 #include "impeller/entity/save_layer_utils.h"
 #include "impeller/geometry/color.h"
 #include "impeller/geometry/constants.h"
 #include "impeller/geometry/rstransform.h"
 #include "impeller/renderer/command_buffer.h"
-
-#include "flutter/third_party/skia/src/core/SkVerticesPriv.h"  // nogncheck
-#include "flutter/third_party/skia/src/utils/SkShadowTessellator.h"  // nogncheck
 
 namespace impeller {
 
@@ -627,71 +625,41 @@ bool Canvas::AttemptDrawBlurredShadow(const flutter::DlPath& path,
   }
 
   Paint path_paint = {.color = path_color};
-
-  // TODO(jimgraham): more conditions?
   auto matrix = GetCurrentTransform();
-  const SkMatrix ctm = SkMatrix::MakeAll(
-      // clang-format off
-      matrix.m[0], matrix.m[4], matrix.m[12],
-      matrix.m[1], matrix.m[5], matrix.m[13],
-      matrix.m[3], matrix.m[7], matrix.m[15]
-      // clang-format on
-  );
-  SkVector3 z_plane = {0, 0, 10};  // occluder_height};
-  bool transparent = true;         // TODO(jimgraham): what does this mean?
-  auto sk_vertices = SkShadowTessellator::MakeAmbient(path.GetSkPath(), ctm,
-                                                      z_plane, transparent);
+  std::shared_ptr<ShadowVertices> shadow_vertices =
+      ShadowPathGeometry::MakeAmbientShadowVertices(renderer_.GetTessellator(),
+                                                    path, occluder_height,
+                                                    matrix);
+      // ShadowPathGeometry::MakeAmbientShadowVerticesSkia(path, 10, matrix);
 
-  if (!sk_vertices) {
+  if (!shadow_vertices) {
     return false;
   }
 
-  auto sk_priv = sk_vertices->priv();
+  flutter::DlVertexMode mode = flutter::DlVertexMode::kTriangles;
+  flutter::DlVertices::Builder::Flags flags =
+      flutter::DlVertices::Builder::kHasColors;
 
-  flutter::DlVertexMode mode;
-  switch (sk_priv.mode()) {
-    case SkVertices::VertexMode::kTriangles_VertexMode:
-      mode = flutter::DlVertexMode::kTriangles;
-      break;
-    case SkVertices::VertexMode::kTriangleStrip_VertexMode:
-      mode = flutter::DlVertexMode::kTriangleStrip;
-      break;
-    case SkVertices::VertexMode::kTriangleFan_VertexMode:
-      mode = flutter::DlVertexMode::kTriangleFan;
-      break;
-    default:
-      return false;
+  size_t vertex_count = shadow_vertices->GetVertices().size();
+  size_t index_count = shadow_vertices->GetIndices().size();
+  // if (index_count > 2) return false;
+  flutter::DlVertices::Builder builder(mode, vertex_count, flags, index_count);
+
+  std::vector<flutter::DlColor> shadow_colors;
+  shadow_colors.reserve(vertex_count);
+  for (Scalar gaussian : shadow_vertices->GetGaussians()) {
+    // We simply convert the gaussians into the alpha components of a color
+    // and pass them along to the shader which should map them onto a
+    // gaussian curve before rendering the color. The alpha will be
+    // interpolated in a linear space by the GPU, so the adjustment
+    // from that linear space to the associated point on the gaussian
+    // curve must be done in the shader itself for each pixel.
+    shadow_colors.push_back(flutter::DlColor::RGBA(0, 0, 0, gaussian));
   }
 
-  flutter::DlVertices::Builder::Flags flags;
-  flags.has_texture_coordinates = sk_priv.hasTexCoords();
-  flags.has_colors = sk_priv.hasColors();
-
-  flutter::DlVertices::Builder builder(
-      mode, sk_priv.vertexCount(), flags,
-      sk_priv.hasIndices() ? sk_priv.indexCount() : 0u);
-
-  auto vertex_sk_points = sk_priv.positions();
-  auto vertex_points =
-      reinterpret_cast<const flutter::DlPoint*>(vertex_sk_points);
-  builder.store_vertices(vertex_points);
-
-  if (flags.has_texture_coordinates) {
-    auto vertex_sk_tex_coords = sk_priv.texCoords();
-    auto vertex_tex_coords =
-        reinterpret_cast<const flutter::DlPoint*>(vertex_sk_tex_coords);
-    builder.store_vertices(vertex_tex_coords);
-  }
-
-  if (flags.has_colors) {
-    auto vertex_sk_colors = sk_priv.colors();
-    auto vertex_colors = reinterpret_cast<const uint32_t*>(vertex_sk_colors);
-    builder.store_colors(vertex_colors);
-  }
-
-  if (sk_priv.hasIndices()) {
-    builder.store_indices(sk_priv.indices());
-  }
+  builder.store_vertices(shadow_vertices->GetVertices().data());
+  builder.store_colors(shadow_colors.data());
+  builder.store_indices(shadow_vertices->GetIndices().data());
 
   ResetTransform();
   auto geom = std::make_shared<DlVerticesGeometry>(builder.build(), renderer_);
