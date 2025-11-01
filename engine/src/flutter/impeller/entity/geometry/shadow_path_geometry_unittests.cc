@@ -11,6 +11,8 @@
 #include "flutter/third_party/skia/src/core/SkVerticesPriv.h"  // nogncheck
 #include "flutter/third_party/skia/src/utils/SkShadowTessellator.h"  // nogncheck
 
+#define SHOW_VERTICES false
+
 namespace impeller {
 namespace testing {
 
@@ -18,6 +20,7 @@ using namespace flutter;
 
 namespace {
 
+#if SHOW_VERTICES
 static void ShowVertices(
     const std::string& label,
     const std::shared_ptr<ShadowVertices>& shadow_vertices) {
@@ -35,8 +38,168 @@ static void ShowVertices(
   }
   FML_LOG(ERROR) << "}  // " << label;
 }
+#endif
+
+static constexpr Scalar kEpsilonSquared =
+    flutter::kEhCloseEnough * flutter::kEhCloseEnough;
+
+static bool SimilarPoint(Point p1, Point p2) {
+  return p1.GetDistanceSquared(p2) < kEpsilonSquared;
+}
+
+static bool SimilarPointPair(Point p1_1, Point p1_2, Point p2_1, Point p2_2) {
+  if (SimilarPoint(p1_1, p2_1) && SimilarPoint(p1_2, p2_2)) {
+    return true;
+  }
+  if (SimilarPoint(p1_1, p2_2) && SimilarPoint(p1_2, p2_1)) {
+    return true;
+  }
+  return false;
+}
+
+static bool SimilarPointTrio(Point p1_1,
+                             Point p1_2,
+                             Point p1_3,  //
+                             Point p2_1,
+                             Point p2_2,
+                             Point p2_3) {
+  if (SimilarPoint(p1_1, p2_1) && SimilarPointPair(p1_2, p1_3, p2_2, p2_3)) {
+    return true;
+  }
+  if (SimilarPoint(p1_1, p2_2) && SimilarPointPair(p1_2, p1_3, p2_1, p2_3)) {
+    return true;
+  }
+  if (SimilarPoint(p1_1, p2_3) && SimilarPointPair(p1_2, p1_3, p2_1, p2_2)) {
+    return true;
+  }
+  return false;
+}
+
+static size_t CountDuplicateVertices(
+    const std::shared_ptr<ShadowVertices>& shadow_vertices) {
+  size_t duplicate_vertices = 0u;
+  auto vertices = shadow_vertices->GetVertices();
+  size_t vertex_count = vertices.size();
+
+  for (size_t i = 1u; i < vertex_count; i++) {
+    Point& vertex = vertices[i];
+    for (size_t j = 0u; j < i; j--) {
+      if (SimilarPoint(vertex, vertices[j])) {
+        duplicate_vertices++;
+      }
+    }
+  }
+
+  return duplicate_vertices;
+}
+
+static size_t CountDuplicateTriangles(
+    const std::shared_ptr<ShadowVertices>& shadow_vertices) {
+  size_t duplicate_triangles = 0u;
+  auto vertices = shadow_vertices->GetVertices();
+  auto indices = shadow_vertices->GetIndices();
+  size_t index_count = indices.size();
+
+  for (size_t i = 3u; i < index_count; i += 3) {
+    Point& vertex_1_1 = vertices[indices[i + 0]];
+    Point& vertex_1_2 = vertices[indices[i + 1]];
+    Point& vertex_1_3 = vertices[indices[i + 2]];
+    for (size_t j = 0; j < i; j += 3) {
+      Point& vertex_2_1 = vertices[indices[j + 0]];
+      Point& vertex_2_2 = vertices[indices[j + 1]];
+      Point& vertex_2_3 = vertices[indices[j + 2]];
+      if (SimilarPointTrio(vertex_1_1, vertex_1_2, vertex_1_3,  //
+                           vertex_2_1, vertex_2_2, vertex_2_3)) {
+        duplicate_triangles++;
+      }
+    }
+  }
+
+  return duplicate_triangles;
+}
 
 }  // namespace
+
+TEST(ShadowPathGeometryTest, EmptyPathTest) {
+  DlPathBuilder path_builder;
+  const DlPath path = path_builder.TakePath();
+  const Matrix matrix;
+  const Scalar height = 10.0f;
+
+  Tessellator tessellator;
+  std::shared_ptr<ShadowVertices> shadow_vertices =
+      ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
+                                                    matrix);
+
+  EXPECT_EQ(shadow_vertices, nullptr);
+}
+
+TEST(ShadowPathGeometryTest, MoveToOnlyTest) {
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(100, 100));
+  const DlPath path = path_builder.TakePath();
+  const Matrix matrix;
+  const Scalar height = 10.0f;
+
+  Tessellator tessellator;
+  std::shared_ptr<ShadowVertices> shadow_vertices =
+      ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
+                                                    matrix);
+
+  EXPECT_EQ(shadow_vertices, nullptr);
+}
+
+TEST(ShadowPathGeometryTest, OnePathSegmentTest) {
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(100, 100));
+  path_builder.LineTo(DlPoint(200, 100));
+  const DlPath path = path_builder.TakePath();
+  const Matrix matrix;
+  const Scalar height = 10.0f;
+
+  Tessellator tessellator;
+  std::shared_ptr<ShadowVertices> shadow_vertices =
+      ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
+                                                    matrix);
+
+  EXPECT_EQ(shadow_vertices, nullptr);
+}
+
+TEST(ShadowPathGeometryTest, TwoColinearSegmentsTest) {
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(100, 100));
+  path_builder.LineTo(DlPoint(200, 100));
+  path_builder.LineTo(DlPoint(300, 100));
+  const DlPath path = path_builder.TakePath();
+  const Matrix matrix;
+  const Scalar height = 10.0f;
+
+  Tessellator tessellator;
+  std::shared_ptr<ShadowVertices> shadow_vertices =
+      ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
+                                                    matrix);
+
+  EXPECT_EQ(shadow_vertices, nullptr);
+}
+
+TEST(ShadowPathGeometryTest, EmptyRectTest) {
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(100, 100));
+  path_builder.LineTo(DlPoint(200, 100));
+  path_builder.LineTo(DlPoint(200, 100));
+  path_builder.LineTo(DlPoint(100, 100));
+  path_builder.Close();
+  const DlPath path = path_builder.TakePath();
+  const Matrix matrix;
+  const Scalar height = 10.0f;
+
+  Tessellator tessellator;
+  std::shared_ptr<ShadowVertices> shadow_vertices =
+      ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
+                                                    matrix);
+
+  EXPECT_EQ(shadow_vertices, nullptr);
+}
 
 TEST(ShadowPathGeometryTest, ClockwiseRectTest) {
   DlPathBuilder path_builder;
@@ -47,7 +210,7 @@ TEST(ShadowPathGeometryTest, ClockwiseRectTest) {
   path_builder.Close();
   const DlPath path = path_builder.TakePath();
   const Matrix matrix;
-  const Scalar height = 2.0f;
+  const Scalar height = 10.0f;
 
   Tessellator tessellator;
   std::shared_ptr<ShadowVertices> shadow_vertices =
@@ -56,19 +219,23 @@ TEST(ShadowPathGeometryTest, ClockwiseRectTest) {
 
   ASSERT_NE(shadow_vertices, nullptr);
   EXPECT_FALSE(shadow_vertices->IsEmpty());
-  EXPECT_EQ(shadow_vertices->GetVertexCount(), 22u);
-  EXPECT_EQ(shadow_vertices->GetIndexCount(), 72u);
-  EXPECT_EQ(shadow_vertices->GetVertices().size(), 22u);
-  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 22u);
-  EXPECT_EQ(shadow_vertices->GetIndices().size(), 72u);
+  EXPECT_EQ(shadow_vertices->GetVertexCount(), 26u);
+  EXPECT_EQ(shadow_vertices->GetIndexCount(), 84u);
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 26u);
+  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 26u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 84u);
   EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
+  EXPECT_EQ(CountDuplicateVertices(shadow_vertices), 0u);
+  EXPECT_EQ(CountDuplicateTriangles(shadow_vertices), 0u);
 
+#if SHOW_VERTICES
   ShowVertices("Impeller Vertices", shadow_vertices);
 
-#ifndef NDEBUG
+#if EXPORT_SKIA_SHADOW
   auto sk_shadow_vertices =
       ShadowPathGeometry::MakeAmbientShadowVerticesSkia(path, height, matrix);
   ShowVertices("Skia Vertices", sk_shadow_vertices);
+#endif
 #endif
 }
 
@@ -81,7 +248,7 @@ TEST(ShadowPathGeometryTest, CounterClockwiseRectTest) {
   path_builder.Close();
   DlPath path = path_builder.TakePath();
   Matrix matrix;
-  const Scalar height = 2.0f;
+  const Scalar height = 10.0f;
 
   Tessellator tessellator;
   std::shared_ptr<ShadowVertices> shadow_vertices =
@@ -90,21 +257,25 @@ TEST(ShadowPathGeometryTest, CounterClockwiseRectTest) {
 
   ASSERT_NE(shadow_vertices, nullptr);
   EXPECT_FALSE(shadow_vertices->IsEmpty());
-  EXPECT_EQ(shadow_vertices->GetVertexCount(), 22u);
-  EXPECT_EQ(shadow_vertices->GetIndexCount(), 72u);
-  EXPECT_EQ(shadow_vertices->GetVertices().size(), 22u);
-  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 22u);
-  EXPECT_EQ(shadow_vertices->GetIndices().size(), 72u);
+  EXPECT_EQ(shadow_vertices->GetVertexCount(), 26u);
+  EXPECT_EQ(shadow_vertices->GetIndexCount(), 84u);
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 26u);
+  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 26u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 84u);
   EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
+  EXPECT_EQ(CountDuplicateVertices(shadow_vertices), 0u);
+  EXPECT_EQ(CountDuplicateTriangles(shadow_vertices), 0u);
 
+#if SHOW_VERTICES
   ShowVertices("Impeller Vertices", shadow_vertices);
+#endif
 }
 
 TEST(ShadowPathGeometryTest, ScaledRectTest) {
   Tessellator tessellator;
   DlPath path = DlPath::MakeRect(DlRect::MakeLTRB(0, 0, 100, 80));
   Matrix matrix = Matrix::MakeScale({2, 3, 1});
-  const Scalar height = 2.0f;
+  const Scalar height = 10.0f;
 
   std::shared_ptr<ShadowVertices> shadow_vertices =
       ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
@@ -112,21 +283,25 @@ TEST(ShadowPathGeometryTest, ScaledRectTest) {
 
   ASSERT_NE(shadow_vertices, nullptr);
   EXPECT_FALSE(shadow_vertices->IsEmpty());
-  EXPECT_EQ(shadow_vertices->GetVertexCount(), 22u);
-  EXPECT_EQ(shadow_vertices->GetIndexCount(), 72u);
-  EXPECT_EQ(shadow_vertices->GetVertices().size(), 22u);
-  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 22u);
-  EXPECT_EQ(shadow_vertices->GetIndices().size(), 72u);
+  EXPECT_EQ(shadow_vertices->GetVertexCount(), 26u);
+  EXPECT_EQ(shadow_vertices->GetIndexCount(), 84u);
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 26u);
+  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 26u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 84u);
   EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
+  EXPECT_EQ(CountDuplicateVertices(shadow_vertices), 0u);
+  EXPECT_EQ(CountDuplicateTriangles(shadow_vertices), 0u);
 
+#if SHOW_VERTICES
   ShowVertices("Impeller Vertices", shadow_vertices);
+#endif
 }
 
 TEST(ShadowPathGeometryTest, EllipseTest) {
   Tessellator tessellator;
   DlPath path = DlPath::MakeOval(DlRect::MakeLTRB(0, 0, 100, 80));
   Matrix matrix;
-  const Scalar height = 2.0f;
+  const Scalar height = 10.0f;
 
   std::shared_ptr<ShadowVertices> shadow_vertices =
       ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
@@ -134,19 +309,21 @@ TEST(ShadowPathGeometryTest, EllipseTest) {
 
   ASSERT_NE(shadow_vertices, nullptr);
   EXPECT_FALSE(shadow_vertices->IsEmpty());
-  EXPECT_EQ(shadow_vertices->GetVertexCount(), 162u);
-  EXPECT_EQ(shadow_vertices->GetIndexCount(), 600u);
-  EXPECT_EQ(shadow_vertices->GetVertices().size(), 162u);
-  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 162u);
-  EXPECT_EQ(shadow_vertices->GetIndices().size(), 600u);
+  EXPECT_EQ(shadow_vertices->GetVertexCount(), 122u);
+  EXPECT_EQ(shadow_vertices->GetIndexCount(), 480u);
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 122u);
+  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 122u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 480u);
   EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
+  EXPECT_EQ(CountDuplicateVertices(shadow_vertices), 0u);
+  EXPECT_EQ(CountDuplicateTriangles(shadow_vertices), 0u);
 }
 
 TEST(ShadowPathGeometryTest, RoundRectTest) {
   Tessellator tessellator;
   DlPath path = DlPath::MakeRoundRectXY(DlRect::MakeLTRB(0, 0, 100, 80), 5, 4);
   Matrix matrix;
-  const Scalar height = 2.0f;
+  const Scalar height = 10.0f;
 
   std::shared_ptr<ShadowVertices> shadow_vertices =
       ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
@@ -154,12 +331,14 @@ TEST(ShadowPathGeometryTest, RoundRectTest) {
 
   ASSERT_NE(shadow_vertices, nullptr);
   EXPECT_FALSE(shadow_vertices->IsEmpty());
-  EXPECT_EQ(shadow_vertices->GetVertexCount(), 66u);
-  EXPECT_EQ(shadow_vertices->GetIndexCount(), 240u);
-  EXPECT_EQ(shadow_vertices->GetVertices().size(), 66u);
-  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 66u);
-  EXPECT_EQ(shadow_vertices->GetIndices().size(), 240u);
+  EXPECT_EQ(shadow_vertices->GetVertexCount(), 58u);
+  EXPECT_EQ(shadow_vertices->GetIndexCount(), 216u);
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 58u);
+  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 58u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 216u);
   EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
+  EXPECT_EQ(CountDuplicateVertices(shadow_vertices), 0u);
+  EXPECT_EQ(CountDuplicateTriangles(shadow_vertices), 0u);
 }
 
 }  // namespace testing

@@ -35,7 +35,7 @@ void DrawShadowMesh(DisplayListBuilder& builder,
   DlPaint paint;
   paint.setDrawStyle(DlDrawStyle::kStroke);
   if (use_skia) {
-#ifndef NDEBUG
+#if EXPORT_SKIA_SHADOW
     shadow_vertices =
         ShadowPathGeometry::MakeAmbientShadowVerticesSkia(path, elevation, {});
     paint.setColor(DlColor::kGreen());
@@ -69,6 +69,27 @@ void DrawShadowMesh(DisplayListBuilder& builder,
   builder.DrawPath(path, paint);
   builder.Restore();
 }
+
+void DrawShadowAndCompareMeshes(DisplayListBuilder& builder,
+                                const DlPath& path,
+                                Scalar elevation,
+                                Scalar dpr) {
+  builder.DrawShadow(path, DlColor::kBlue(), elevation, true, dpr);
+  DrawShadowMesh(builder, path, elevation, dpr, false);
+  builder.Translate(0, 300);
+  DrawShadowMesh(builder, path, elevation, dpr, true);
+  DrawShadowMesh(builder, path, elevation, dpr, false);
+  builder.Translate(0, -300);
+
+  builder.Translate(300, 0);
+
+  builder.DrawShadow(path, DlColor::kBlue(), elevation, true, dpr);
+  DrawShadowMesh(builder, path, elevation, dpr, true);
+  builder.Translate(0, 300);
+  DrawShadowMesh(builder, path, elevation, dpr, false);
+  DrawShadowMesh(builder, path, elevation, dpr, true);
+  builder.Translate(0, -300);
+}
 }  // namespace
 
 TEST_P(AiksTest, CanDrawClockwiseTriangleShadow) {
@@ -85,20 +106,7 @@ TEST_P(AiksTest, CanDrawClockwiseTriangleShadow) {
   triangle_builder.Close();
   DlPath triangle_path = triangle_builder.TakePath();
 
-  builder.DrawShadow(triangle_path, DlColor::kBlue(), elevation, true, dpr);
-  DrawShadowMesh(builder, triangle_path, elevation, dpr, false);
-  builder.Translate(0, 300);
-  DrawShadowMesh(builder, triangle_path, elevation, dpr, true);
-  DrawShadowMesh(builder, triangle_path, elevation, dpr, false);
-  builder.Translate(0, -300);
-
-  builder.Translate(300, 0);
-  builder.DrawShadow(triangle_path, DlColor::kBlue(), elevation, true, dpr);
-  DrawShadowMesh(builder, triangle_path, elevation, dpr, true);
-  builder.Translate(0, 300);
-  DrawShadowMesh(builder, triangle_path, elevation, dpr, false);
-  DrawShadowMesh(builder, triangle_path, elevation, dpr, true);
-  builder.Translate(0, -300);
+  DrawShadowAndCompareMeshes(builder, triangle_path, elevation, dpr);
 
   auto dl = builder.Build();
   ASSERT_TRUE(OpenPlaygroundHere(dl));
@@ -118,20 +126,49 @@ TEST_P(AiksTest, CanDrawCounterClockwiseTriangleShadow) {
   triangle_builder.Close();
   DlPath triangle_path = triangle_builder.TakePath();
 
-  builder.DrawShadow(triangle_path, DlColor::kBlue(), elevation, true, dpr);
-  DrawShadowMesh(builder, triangle_path, 30.0f, dpr, false);
-  builder.Translate(0, 300);
-  DrawShadowMesh(builder, triangle_path, elevation, dpr, true);
-  DrawShadowMesh(builder, triangle_path, elevation, dpr, false);
-  builder.Translate(0, -300);
+  DrawShadowAndCompareMeshes(builder, triangle_path, elevation, dpr);
 
-  builder.Translate(300, 0);
-  builder.DrawShadow(triangle_path, DlColor::kBlue(), elevation, true, dpr);
-  DrawShadowMesh(builder, triangle_path, 30.0f, dpr, true);
-  builder.Translate(0, 300);
-  DrawShadowMesh(builder, triangle_path, elevation, dpr, false);
-  DrawShadowMesh(builder, triangle_path, elevation, dpr, true);
-  builder.Translate(0, -300);
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest, CanDrawClockwiseRectShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+
+  DlPathBuilder rect_builder;
+  rect_builder.MoveTo(DlPoint(100, 100));
+  rect_builder.LineTo(DlPoint(300, 100));
+  rect_builder.LineTo(DlPoint(300, 300));
+  rect_builder.LineTo(DlPoint(100, 300));
+  rect_builder.Close();
+  DlPath rect_path = rect_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, rect_path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest, CanDrawCounterClockwiseRectShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+
+  DlPathBuilder rect_builder;
+  rect_builder.MoveTo(DlPoint(100, 100));
+  rect_builder.LineTo(DlPoint(100, 300));
+  rect_builder.LineTo(DlPoint(300, 300));
+  rect_builder.LineTo(DlPoint(300, 100));
+  rect_builder.Close();
+  DlPath rect_path = rect_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, rect_path, elevation, dpr);
 
   auto dl = builder.Build();
   ASSERT_TRUE(OpenPlaygroundHere(dl));

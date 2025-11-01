@@ -7,7 +7,7 @@
 #include "flutter/impeller/geometry/path_source.h"
 #include "flutter/impeller/tessellator/path_tessellator.h"
 
-#ifndef NDEBUG
+#if EXPORT_SKIA_SHADOW
 #include "flutter/third_party/skia/src/core/SkVerticesPriv.h"  // nogncheck
 #include "flutter/third_party/skia/src/utils/SkShadowTessellator.h"  // nogncheck
 #endif
@@ -22,6 +22,7 @@ using impeller::Scalar;
 using impeller::ScalarNearlyZero;
 using impeller::ShadowVertices;
 using impeller::Tessellator;
+using impeller::Trig;
 using impeller::Vector2;
 
 class PolygonInfo : impeller::PathTessellator::VertexWriter {
@@ -266,6 +267,7 @@ PolygonInfo::PolygonInfo(const impeller::PathSource& source,
   if (!is_valid_ || pins_.size() < 3 || direction_ == 0.0f ||
       shape_area_ == 0.0f) {
     // The shape was either invalid or empty.
+    is_valid_ = false;
     return;
   }
 
@@ -951,7 +953,9 @@ uint16_t PolygonInfo::AppendFan(const UmbraPin* p_curr_pin,
 
   Vector2 start_delta = start - center;
   Vector2 end_delta = end - center;
-  for (auto trig : trigs_) {
+  size_t trig_count = trigs_.size();
+  for (size_t i = 1u; i < trig_count; i++) {
+    Trig trig = trigs_[i];
     Point fan_delta = (direction_ >= 0 ? trig : -trig) * start_delta;
     if (fan_delta.Cross(end_delta) * direction_ <= 0) {
       break;
@@ -959,6 +963,17 @@ uint16_t PolygonInfo::AppendFan(const UmbraPin* p_curr_pin,
     uint16_t cur_index = AppendVertex(center + fan_delta, 0.0f);
     AddTriangle(center_index, prev_index, cur_index);
     prev_index = cur_index;
+    if (i == trig_count - 1) {
+      // This corner was >90 degrees so we start the loop over in case there
+      // are more intermediate angles to emit.
+      //
+      // We set the loop variable to 0u which looks like it might apply a
+      // 0 rotation to the new start_delta, but the for loop is about to
+      // auto-incrment the variable to 1u, which will start at the next
+      // non-0 rotation angle.
+      i = 0u;
+      start_delta = fan_delta;
+    }
   }
   uint16_t cur_index = AppendVertex(center + end_delta, 0.0f);
   AddTriangle(center_index, prev_index, cur_index);
@@ -1002,7 +1017,7 @@ std::shared_ptr<ShadowVertices> ShadowPathGeometry::MakeAmbientShadowVertices(
   return polygon.TakeVertices();
 }
 
-#ifndef NDEBUG
+#if EXPORT_SKIA_SHADOW
 std::shared_ptr<ShadowVertices>
 ShadowPathGeometry::MakeAmbientShadowVerticesSkia(const flutter::DlPath& path,
                                                   Scalar occluder_height,
@@ -1018,6 +1033,10 @@ ShadowPathGeometry::MakeAmbientShadowVerticesSkia(const flutter::DlPath& path,
   bool transparent = true;
   auto sk_vertices = SkShadowTessellator::MakeAmbient(path.GetSkPath(), ctm,
                                                       z_plane, transparent);
+  if (sk_vertices == nullptr) {
+    return nullptr;
+  }
+
   auto sk_priv = sk_vertices->priv();
 
   std::vector<Point> vertices;
