@@ -15,6 +15,7 @@
 #include "flutter/display_list/geometry/dl_path.h"
 #endif
 
+#include "flutter/impeller/entity/geometry/geometry.h"
 #include "flutter/impeller/geometry/path_source.h"
 #include "flutter/impeller/tessellator/tessellator.h"
 
@@ -52,8 +53,23 @@ class ShadowVertices {
   const std::vector<Scalar> gaussians_;
 };
 
-class ShadowPathGeometry {
+class ShadowPathGeometry : public Geometry {
  public:
+  ShadowPathGeometry(Tessellator& tessellator,
+                     const Matrix& matrix,
+                     const PathSource& source,
+                     Scalar occluder_height);
+
+  GeometryResult GetPositionGaussianBuffer(const ContentContext& renderer,
+                                           const Entity& entity,
+                                           RenderPass& pass) const;
+
+  bool CanRender() const;
+
+  const std::shared_ptr<ShadowVertices>& GetShadowVertices() const;
+
+  std::optional<Rect> GetBounds() const;
+
   static std::shared_ptr<ShadowVertices> MakeAmbientShadowVertices(
       Tessellator& tessellator,
       const PathSource& source,
@@ -66,6 +82,9 @@ class ShadowPathGeometry {
       Scalar occluder_height,
       const Matrix& matrix);
 #endif
+
+ private:
+  const std::shared_ptr<ShadowVertices> shadow_vertices_;
 };
 
 }  // namespace impeller

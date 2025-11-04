@@ -10,10 +10,12 @@ uniform FrameInfo {
 frame_info;
 
 in vec2 position;
+in float gaussian;
 
-out f16vec4 v_color;
+out float v_gaussian;
 
 void main() {
   // Shadow vertices geometry is already in device space.
   gl_Position = vec4(position, 0.0, 1.0);
+  v_gaussian = gaussian;
 }

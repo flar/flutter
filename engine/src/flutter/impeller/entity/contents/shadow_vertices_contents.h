@@ -22,9 +22,11 @@ class ShadowVerticesContents final : public Contents {
 
   ~ShadowVerticesContents() override;
 
-  void SetGeometry(std::shared_ptr<ShadowVertices> geometry);
+  void SetGeometry(std::shared_ptr<ShadowPathGeometry> geometry);
 
   void SetEffectTransform(Matrix transform);
+
+  void SetShadowColor(Color shadow_color);
 
   // |Contents|
   std::optional<Rect> GetCoverage(const Entity& entity) const override;
@@ -35,8 +37,9 @@ class ShadowVerticesContents final : public Contents {
               RenderPass& pass) const override;
 
  private:
-  std::shared_ptr<ShadowVertices> geometry_;
-  Matrix inverse_matrix_ = {};
+  std::shared_ptr<ShadowPathGeometry> geometry_;
+  Matrix inverse_matrix_;
+  Color shadow_color_;
 
   ShadowVerticesContents(const ShadowVerticesContents&) = delete;
 

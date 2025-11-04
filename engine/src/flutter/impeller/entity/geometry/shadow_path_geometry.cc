@@ -4,6 +4,7 @@
 
 #include "flutter/impeller/entity/geometry/shadow_path_geometry.h"
 
+#include "flutter/impeller/entity/contents/pipelines.h"
 #include "flutter/impeller/geometry/path_source.h"
 #include "flutter/impeller/tessellator/path_tessellator.h"
 
@@ -1045,6 +1046,69 @@ namespace impeller {
 
 std::optional<Rect> ShadowVertices::GetBounds() const {
   return Rect::MakePointBounds(vertices_);
+}
+
+ShadowPathGeometry::ShadowPathGeometry(Tessellator& tessellator,
+                                       const Matrix& matrix,
+                                       const PathSource& source,
+                                       Scalar occluder_height)
+    : shadow_vertices_(MakeAmbientShadowVertices(tessellator,
+                                                 source,
+                                                 occluder_height,
+                                                 matrix)) {}
+
+bool ShadowPathGeometry::CanRender() const {
+  return shadow_vertices_ != nullptr;
+}
+
+const std::shared_ptr<ShadowVertices>& ShadowPathGeometry::GetShadowVertices()
+    const {
+  return shadow_vertices_;
+}
+
+std::optional<Rect> ShadowPathGeometry::GetBounds() const {
+  return shadow_vertices_ ? shadow_vertices_->GetBounds() : std::nullopt;
+}
+
+GeometryResult ShadowPathGeometry::GetPositionGaussianBuffer(
+    const ContentContext& renderer,
+    const Entity& entity,
+    RenderPass& pass) const {
+  FML_DCHECK(CanRender());
+
+  using VS = ShadowVerticesVertexShader;
+
+  size_t vertex_count = shadow_vertices_->GetVertexCount();
+
+  BufferView vertex_buffer = renderer.GetTransientsDataBuffer().Emplace(
+      vertex_count * sizeof(VS::PerVertexData), alignof(VS::PerVertexData),
+      [&](uint8_t* data) {
+        VS::PerVertexData* vtx_contents =
+            reinterpret_cast<VS::PerVertexData*>(data);
+        const std::vector<Point>& vertices = shadow_vertices_->GetVertices();
+        const std::vector<Scalar>& gaussians = shadow_vertices_->GetGaussians();
+        for (size_t i = 0u; i < vertex_count; i++) {
+          vtx_contents[i] = {.position = vertices[i], .gaussian = gaussians[i]};
+        }
+      });
+
+  size_t index_count = shadow_vertices_->GetIndexCount();
+  const uint16_t* indices_data = shadow_vertices_->GetIndices().data();
+  BufferView index_buffer = {};
+  index_buffer = renderer.GetTransientsIndexesBuffer().Emplace(
+      indices_data, index_count * sizeof(uint16_t), alignof(uint16_t));
+
+  return GeometryResult{
+      .type = PrimitiveType::kTriangle,
+      .vertex_buffer =
+          {
+              .vertex_buffer = vertex_buffer,
+              .index_buffer = index_buffer,
+              .vertex_count = index_count,
+              .index_type = IndexType::k16bit,
+          },
+      .transform = entity.GetShaderTransform(pass),
+  };
 }
 
 std::shared_ptr<ShadowVertices> ShadowPathGeometry::MakeAmbientShadowVertices(

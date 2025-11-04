@@ -32,12 +32,12 @@ frag_info;
 // as its alpha value. It determines where in the gaussian curve of the
 // umbra and penumbra we are with 0.0 representing the outermost part of
 // the penumbra and 1.0 representing the innermost umbra.
-in f16vec4 v_color;
+in float v_gaussian;
 
 out f16vec4 frag_color;
 
 // A shader that implements the required gaussian interpolation and then
 // blending required for DrawShadow in a single step.
 void main() {
-  frag_color = frag_info.shadow_color * gauss(v_color.a);
+  frag_color = frag_info.shadow_color * gauss(v_gaussian);
 }
