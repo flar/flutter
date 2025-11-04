@@ -142,6 +142,25 @@ class PolygonInfo : impeller::PathTessellator::VertexWriter {
   Scalar direction_ = 0.0f;
   bool path_ended_ = false;
 
+  // Simple cross products of nearby vertices don't catch all cases of
+  // non-convexity so we count the number of times that the sign of the
+  // dx/dy of the edges change. It must be <= 3 times for the path to
+  // be convex. Think of drawing a circle from the top. First you head
+  // to the right, then reverse to the left as you round the bottom of
+  // the circle, then back near the top you head to the right again,
+  // totalling 3 changes in direction.
+  struct DirectionDetector {
+    Scalar last_direction_ = 0.0f;
+    size_t change_count = 0u;
+
+    void AccumulateDirection(Scalar new_direction) {
+      if (last_direction_ == 0.0f || last_direction_ * new_direction < 0.0f) {
+        last_direction_ = std::copysign(1.0f, new_direction);
+        change_count++;
+      }
+    }
+  } x_direction_detector_, y_direction_detector_;
+
   // The vertex mesh result that represents the shadow, to be rendered
   // using a modified indexed variant of DrawVertices that also adjusts
   // the alpha of the colors on a per-pixel basis by mapping their linear
@@ -164,6 +183,12 @@ class PolygonInfo : impeller::PathTessellator::VertexWriter {
 
   // Rounds the device coordinate to the sub-pixel grid.
   Point ToDeviceGrid(Point point);
+
+  // Check the direction that the edge is heading and count the number of
+  // times that the sign of the dx and dy values change. If either of those
+  // separated coordinate directions change more than 2 times, return false
+  // to indicate that the path is not simple and convex.
+  bool CheckEdgeDirection(const Vector2 edge_vector);
 
   // Validates that the given point continues the path on a single contour,
   // non-self-intersecting, convex path and updates the area and centroid
@@ -347,6 +372,16 @@ Point PolygonInfo::ToDeviceGrid(Point point) {
   return (point * kSubPixelCount).Round() * kSubPixelScale;
 }
 
+// Use the direction change accumulators to count the number of times
+// that edges change direction in X and Y and return whether the path
+// can still be classified as simple and convex.
+bool PolygonInfo::CheckEdgeDirection(const Vector2 edge_vector) {
+  x_direction_detector_.AccumulateDirection(edge_vector.x);
+  y_direction_detector_.AccumulateDirection(edge_vector.y);
+  return x_direction_detector_.change_count <= 3u &&
+         y_direction_detector_.change_count <= 3u;
+}
+
 // This method performs 3 functions.
 // - Ensure that the 3 most recent vertices are turning in a consistent
 //   direction. (No concave sections.)
@@ -363,6 +398,9 @@ bool PolygonInfo::ValidatePointAndUpdateCentroid(const Point& new_point) {
   }
 
   const Point& prev = pins_.back().path_vertex;
+  if (!CheckEdgeDirection(new_point - prev)) {
+    return is_valid_ = false;
+  }
 
   // direction_ is always normalized to one of these values.
   FML_DCHECK(direction_ == 0.0f ||  //

@@ -34,8 +34,9 @@ void DrawShadowMesh(DisplayListBuilder& builder,
   std::shared_ptr<ShadowVertices> shadow_vertices;
   DlPaint paint;
   paint.setDrawStyle(DlDrawStyle::kStroke);
-  paint.setColor(use_skia ? DlColor::kGreen() : DlColor::kRed());
   bool should_optimize = path.IsConvex();
+  paint.setColor(use_skia && should_optimize ? DlColor::kGreen()
+                                             : DlColor::kRed());
 
   if (use_skia) {
 #if EXPORT_SKIA_SHADOW
@@ -48,12 +49,12 @@ void DrawShadowMesh(DisplayListBuilder& builder,
     Tessellator tessellator;
     shadow_vertices = ShadowPathGeometry::MakeAmbientShadowVertices(
         tessellator, path, elevation, {});
+    EXPECT_EQ(shadow_vertices != nullptr, should_optimize);
   }
 
-  EXPECT_EQ(shadow_vertices != nullptr, should_optimize);
+  builder.Save();
+  builder.Translate(0, elevation * dpr * 0.5f);
   if (shadow_vertices) {
-    builder.Save();
-    builder.Translate(0, elevation * dpr * 0.5f);
     auto indices = shadow_vertices->GetIndices();
     auto vertices = shadow_vertices->GetVertices();
     DlPathBuilder mesh_builder;
