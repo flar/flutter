@@ -1005,6 +1005,10 @@ void PolygonInfo::AddTriangle(uint16_t v0, uint16_t v1, uint16_t v2) {
 
 namespace impeller {
 
+std::optional<Rect> ShadowVertices::GetBounds() const {
+  return Rect::MakePointBounds(vertices_);
+}
+
 std::shared_ptr<ShadowVertices> ShadowPathGeometry::MakeAmbientShadowVertices(
     Tessellator& tessellator,
     const PathSource& source,

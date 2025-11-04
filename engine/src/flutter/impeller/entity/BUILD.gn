@@ -41,6 +41,8 @@ impeller_shaders("entity_shaders") {
     "shaders/rrect_like_blur.vert",
     "shaders/rsuperellipse_blur.frag",
     "shaders/runtime_effect.vert",
+    "shaders/shadow_vertices.frag",
+    "shaders/shadow_vertices.vert",
     "shaders/solid_fill.frag",
     "shaders/solid_fill.vert",
     "shaders/texture_fill.frag",

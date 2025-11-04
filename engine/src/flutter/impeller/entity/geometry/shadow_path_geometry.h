@@ -44,6 +44,7 @@ class ShadowVertices {
   const std::vector<Scalar>& GetGaussians() const { return gaussians_; }
 
   bool IsEmpty() const { return vertices_.empty(); }
+  std::optional<Rect> GetBounds() const;
 
  private:
   const std::vector<Point> vertices_;

@@ -34,11 +34,13 @@ void DrawShadowMesh(DisplayListBuilder& builder,
   std::shared_ptr<ShadowVertices> shadow_vertices;
   DlPaint paint;
   paint.setDrawStyle(DlDrawStyle::kStroke);
+  paint.setColor(use_skia ? DlColor::kGreen() : DlColor::kRed());
+  bool should_optimize = path.IsConvex();
+
   if (use_skia) {
 #if EXPORT_SKIA_SHADOW
     shadow_vertices =
         ShadowPathGeometry::MakeAmbientShadowVerticesSkia(path, elevation, {});
-    paint.setColor(DlColor::kGreen());
 #else
     return;
 #endif
@@ -46,26 +48,26 @@ void DrawShadowMesh(DisplayListBuilder& builder,
     Tessellator tessellator;
     shadow_vertices = ShadowPathGeometry::MakeAmbientShadowVertices(
         tessellator, path, elevation, {});
-    ASSERT_TRUE(shadow_vertices);
-    paint.setColor(DlColor::kRed());
   }
 
-  builder.Save();
-  builder.Translate(0, elevation * dpr * 0.5f);
-  ASSERT_TRUE(shadow_vertices);
-  auto indices = shadow_vertices->GetIndices();
-  auto vertices = shadow_vertices->GetVertices();
-  DlPathBuilder mesh_builder;
-  for (size_t i = 0; i < shadow_vertices->GetIndexCount(); i += 3) {
-    mesh_builder.MoveTo(vertices[indices[i + 0]]);
-    mesh_builder.LineTo(vertices[indices[i + 1]]);
-    mesh_builder.LineTo(vertices[indices[i + 2]]);
-    mesh_builder.Close();
+  EXPECT_EQ(shadow_vertices != nullptr, should_optimize);
+  if (shadow_vertices) {
+    builder.Save();
+    builder.Translate(0, elevation * dpr * 0.5f);
+    auto indices = shadow_vertices->GetIndices();
+    auto vertices = shadow_vertices->GetVertices();
+    DlPathBuilder mesh_builder;
+    for (size_t i = 0; i < shadow_vertices->GetIndexCount(); i += 3) {
+      mesh_builder.MoveTo(vertices[indices[i + 0]]);
+      mesh_builder.LineTo(vertices[indices[i + 1]]);
+      mesh_builder.LineTo(vertices[indices[i + 2]]);
+      mesh_builder.Close();
+    }
+    DlPath mesh_path = mesh_builder.TakePath();
+    builder.DrawPath(mesh_path, paint);
   }
-  DlPath mesh_path = mesh_builder.TakePath();
-  builder.DrawPath(mesh_path, paint);
 
-  paint.setColor(paint.getColor().withAlphaF(0.5f));
+  paint.setColor(DlColor::kPurple());
   builder.DrawPath(path, paint);
   builder.Restore();
 }
@@ -92,6 +94,77 @@ void DrawShadowAndCompareMeshes(DisplayListBuilder& builder,
 }
 }  // namespace
 
+TEST_P(AiksTest, DoesNotOptimizeHourglassShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(100, 100));
+  path_builder.LineTo(DlPoint(300, 300));
+  path_builder.LineTo(DlPoint(100, 300));
+  path_builder.LineTo(DlPoint(300, 100));
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest, DoesNotOptimizeInnerOuterSpiralShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+  int step_count = 20;
+
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(300, 200));
+  for (int i = 1; i < step_count * 2; i++) {
+    Scalar angle = (k2Pi * i) / step_count;
+    Scalar radius = 80.0f + std::abs(i - step_count);
+    path_builder.LineTo(DlPoint(200, 200) + DlPoint(std::cos(angle) * radius,
+                                                    std::sin(angle) * radius));
+  }
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest, DoesNotOptimizeOuterInnerSpiralShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+  int step_count = 20;
+
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(280, 200));
+  for (int i = 1; i < step_count * 2; i++) {
+    Scalar angle = (k2Pi * i) / step_count;
+    Scalar radius = 100.0f - std::abs(i - step_count);
+    path_builder.LineTo(DlPoint(200, 200) + DlPoint(std::cos(angle) * radius,
+                                                    std::sin(angle) * radius));
+  }
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
 TEST_P(AiksTest, CanDrawClockwiseTriangleShadow) {
   DisplayListBuilder builder;
   builder.Clear(DlColor::kWhite());
@@ -99,14 +172,14 @@ TEST_P(AiksTest, CanDrawClockwiseTriangleShadow) {
   Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
   Scalar elevation = 30.0f;
 
-  DlPathBuilder triangle_builder;
-  triangle_builder.MoveTo(DlPoint(200, 100));
-  triangle_builder.LineTo(DlPoint(300, 200));
-  triangle_builder.LineTo(DlPoint(100, 200));
-  triangle_builder.Close();
-  DlPath triangle_path = triangle_builder.TakePath();
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(200, 100));
+  path_builder.LineTo(DlPoint(300, 200));
+  path_builder.LineTo(DlPoint(100, 200));
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
 
-  DrawShadowAndCompareMeshes(builder, triangle_path, elevation, dpr);
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
 
   auto dl = builder.Build();
   ASSERT_TRUE(OpenPlaygroundHere(dl));
@@ -119,14 +192,14 @@ TEST_P(AiksTest, CanDrawCounterClockwiseTriangleShadow) {
   Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
   Scalar elevation = 30.0f;
 
-  DlPathBuilder triangle_builder;
-  triangle_builder.MoveTo(DlPoint(200, 100));
-  triangle_builder.LineTo(DlPoint(100, 200));
-  triangle_builder.LineTo(DlPoint(300, 200));
-  triangle_builder.Close();
-  DlPath triangle_path = triangle_builder.TakePath();
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(200, 100));
+  path_builder.LineTo(DlPoint(100, 200));
+  path_builder.LineTo(DlPoint(300, 200));
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
 
-  DrawShadowAndCompareMeshes(builder, triangle_path, elevation, dpr);
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
 
   auto dl = builder.Build();
   ASSERT_TRUE(OpenPlaygroundHere(dl));
@@ -139,15 +212,15 @@ TEST_P(AiksTest, CanDrawClockwiseRectShadow) {
   Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
   Scalar elevation = 30.0f;
 
-  DlPathBuilder rect_builder;
-  rect_builder.MoveTo(DlPoint(100, 100));
-  rect_builder.LineTo(DlPoint(300, 100));
-  rect_builder.LineTo(DlPoint(300, 300));
-  rect_builder.LineTo(DlPoint(100, 300));
-  rect_builder.Close();
-  DlPath rect_path = rect_builder.TakePath();
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(100, 100));
+  path_builder.LineTo(DlPoint(300, 100));
+  path_builder.LineTo(DlPoint(300, 300));
+  path_builder.LineTo(DlPoint(100, 300));
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
 
-  DrawShadowAndCompareMeshes(builder, rect_path, elevation, dpr);
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
 
   auto dl = builder.Build();
   ASSERT_TRUE(OpenPlaygroundHere(dl));
@@ -160,15 +233,155 @@ TEST_P(AiksTest, CanDrawCounterClockwiseRectShadow) {
   Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
   Scalar elevation = 30.0f;
 
-  DlPathBuilder rect_builder;
-  rect_builder.MoveTo(DlPoint(100, 100));
-  rect_builder.LineTo(DlPoint(100, 300));
-  rect_builder.LineTo(DlPoint(300, 300));
-  rect_builder.LineTo(DlPoint(300, 100));
-  rect_builder.Close();
-  DlPath rect_path = rect_builder.TakePath();
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(100, 100));
+  path_builder.LineTo(DlPoint(100, 300));
+  path_builder.LineTo(DlPoint(300, 300));
+  path_builder.LineTo(DlPoint(300, 100));
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
 
-  DrawShadowAndCompareMeshes(builder, rect_path, elevation, dpr);
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest, CanDrawClockwiseQuadraticShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(200, 100));
+  path_builder.QuadraticCurveTo(DlPoint(300, 100), DlPoint(300, 200));
+  path_builder.QuadraticCurveTo(DlPoint(300, 300), DlPoint(200, 300));
+  path_builder.QuadraticCurveTo(DlPoint(100, 300), DlPoint(100, 200));
+  path_builder.QuadraticCurveTo(DlPoint(100, 100), DlPoint(200, 100));
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest, CanDrawCounterClockwiseQuadraticShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(200, 100));
+  path_builder.QuadraticCurveTo(DlPoint(100, 100), DlPoint(100, 200));
+  path_builder.QuadraticCurveTo(DlPoint(100, 300), DlPoint(200, 300));
+  path_builder.QuadraticCurveTo(DlPoint(300, 300), DlPoint(300, 200));
+  path_builder.QuadraticCurveTo(DlPoint(300, 100), DlPoint(200, 100));
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest, CanDrawClockwiseConicShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(200, 100));
+  path_builder.ConicCurveTo(DlPoint(300, 100), DlPoint(300, 200), 0.4f);
+  path_builder.ConicCurveTo(DlPoint(300, 300), DlPoint(200, 300), 0.4f);
+  path_builder.ConicCurveTo(DlPoint(100, 300), DlPoint(100, 200), 0.4f);
+  path_builder.ConicCurveTo(DlPoint(100, 100), DlPoint(200, 100), 0.4f);
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest, CanDrawCounterClockwiseConicShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(200, 100));
+  path_builder.ConicCurveTo(DlPoint(100, 100), DlPoint(100, 200), 0.4f);
+  path_builder.ConicCurveTo(DlPoint(100, 300), DlPoint(200, 300), 0.4f);
+  path_builder.ConicCurveTo(DlPoint(300, 300), DlPoint(300, 200), 0.4f);
+  path_builder.ConicCurveTo(DlPoint(300, 100), DlPoint(200, 100), 0.4f);
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest, CanDrawClockwiseCubicShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(200, 100));
+  path_builder.CubicCurveTo(DlPoint(280, 100), DlPoint(300, 120),
+                            DlPoint(300, 200));
+  path_builder.CubicCurveTo(DlPoint(300, 280), DlPoint(280, 300),
+                            DlPoint(200, 300));
+  path_builder.CubicCurveTo(DlPoint(120, 300), DlPoint(100, 280),
+                            DlPoint(100, 200));
+  path_builder.CubicCurveTo(DlPoint(100, 120), DlPoint(120, 100),
+                            DlPoint(200, 100));
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest, CanDrawCounterClockwiseCubicShadow) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(200, 100));
+  path_builder.CubicCurveTo(DlPoint(120, 100), DlPoint(100, 120),
+                            DlPoint(100, 200));
+  path_builder.CubicCurveTo(DlPoint(100, 280), DlPoint(120, 300),
+                            DlPoint(200, 300));
+  path_builder.CubicCurveTo(DlPoint(280, 300), DlPoint(300, 280),
+                            DlPoint(300, 200));
+  path_builder.CubicCurveTo(DlPoint(300, 120), DlPoint(280, 100),
+                            DlPoint(200, 100));
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
 
   auto dl = builder.Build();
   ASSERT_TRUE(OpenPlaygroundHere(dl));

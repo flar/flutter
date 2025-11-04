@@ -601,9 +601,10 @@ bool Canvas::AttemptDrawBlurredShadow(const flutter::DlPath& path,
     return false;
   }
 
-  if (paint.color_source || paint.image_filter) {
-    return false;
-  }
+  FML_CHECK(paint.color_source == nullptr);
+  FML_CHECK(paint.image_filter == nullptr);
+  FML_CHECK(paint.color_filter == nullptr);
+  FML_CHECK(paint.invert_colors == false);
 
   if (!paint.mask_blur_descriptor.has_value()) {
     return false;
@@ -617,19 +618,12 @@ bool Canvas::AttemptDrawBlurredShadow(const flutter::DlPath& path,
   // For symmetrically mask blurred solid Paths, absorb the mask blur and use
   // a faster SDF approximation.
   Color path_color = paint.color;
-  if (paint.invert_colors) {
-    path_color = path_color.ApplyColorMatrix(kColorInversion);
-  }
-  if (paint.color_filter) {
-    path_color = GetCPUColorFilterProc(paint.color_filter)(path_color);
-  }
 
   Paint path_paint = {.color = path_color};
   auto matrix = GetCurrentTransform();
   std::shared_ptr<ShadowVertices> shadow_vertices =
       ShadowPathGeometry::MakeAmbientShadowVertices(
           renderer_.GetTessellator(), path, occluder_height, matrix);
-  // ShadowPathGeometry::MakeAmbientShadowVerticesSkia(path, 10, matrix);
 
   if (!shadow_vertices) {
     return false;
@@ -653,7 +647,12 @@ bool Canvas::AttemptDrawBlurredShadow(const flutter::DlPath& path,
     // interpolated in a linear space by the GPU, so the adjustment
     // from that linear space to the associated point on the gaussian
     // curve must be done in the shader itself for each pixel.
-    shadow_colors.push_back(flutter::DlColor::RGBA(0, 0, 0, gaussian));
+    // shadow_colors.push_back(flutter::DlColor::RGBA(0, 0, 0, gaussian));
+    shadow_colors.push_back(
+        flutter::DlColor::ARGB(path_color.alpha * gaussian,  //
+                               path_color.red,               //
+                               path_color.green,             //
+                               path_color.blue));
   }
 
   builder.store_vertices(shadow_vertices->GetVertices().data());
