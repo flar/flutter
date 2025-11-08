@@ -31,6 +31,7 @@
 #include "impeller/entity/contents/filters/filter_contents.h"
 #include "impeller/entity/contents/framebuffer_blend_contents.h"
 #include "impeller/entity/contents/line_contents.h"
+#include "impeller/entity/contents/shadow_vertices_contents.h"
 #include "impeller/entity/contents/solid_rrect_blur_contents.h"
 #include "impeller/entity/contents/solid_rsuperellipse_blur_contents.h"
 #include "impeller/entity/contents/text_contents.h"
@@ -615,54 +616,20 @@ bool Canvas::AttemptDrawBlurredShadow(const flutter::DlPath& path,
     return false;
   }
 
-  // For symmetrically mask blurred solid Paths, absorb the mask blur and use
-  // a faster SDF approximation.
-  Color path_color = paint.color;
-
-  Paint path_paint = {.color = path_color};
-  auto matrix = GetCurrentTransform();
-  std::shared_ptr<ShadowVertices> shadow_vertices =
-      ShadowPathGeometry::MakeAmbientShadowVertices(
-          renderer_.GetTessellator(), path, occluder_height, matrix);
-
-  if (!shadow_vertices) {
+  Radius radius = paint.mask_blur_descriptor->sigma;
+  ShadowPathGeometry geometry(renderer_.GetTessellator(), GetCurrentTransform(),
+                              path, radius.radius * 2);
+  if (!geometry.CanRender()) {
     return false;
   }
-
-  flutter::DlVertexMode mode = flutter::DlVertexMode::kTriangles;
-  flutter::DlVertices::Builder::Flags flags =
-      flutter::DlVertices::Builder::kHasColors;
-
-  size_t vertex_count = shadow_vertices->GetVertices().size();
-  size_t index_count = shadow_vertices->GetIndices().size();
-  // if (index_count > 2) return false;
-  flutter::DlVertices::Builder builder(mode, vertex_count, flags, index_count);
-
-  std::vector<flutter::DlColor> shadow_colors;
-  shadow_colors.reserve(vertex_count);
-  for (Scalar gaussian : shadow_vertices->GetGaussians()) {
-    // We simply convert the gaussians into the alpha components of a color
-    // and pass them along to the shader which should map them onto a
-    // gaussian curve before rendering the color. The alpha will be
-    // interpolated in a linear space by the GPU, so the adjustment
-    // from that linear space to the associated point on the gaussian
-    // curve must be done in the shader itself for each pixel.
-    // shadow_colors.push_back(flutter::DlColor::RGBA(0, 0, 0, gaussian));
-    shadow_colors.push_back(
-        flutter::DlColor::ARGB(path_color.alpha * gaussian,  //
-                               path_color.red,               //
-                               path_color.green,             //
-                               path_color.blue));
+  if (geometry.IsEmpty()) {
+    return true;
   }
 
-  builder.store_vertices(shadow_vertices->GetVertices().data());
-  builder.store_colors(shadow_colors.data());
-  builder.store_indices(shadow_vertices->GetIndices().data());
-
-  ResetTransform();
-  auto geom = std::make_shared<DlVerticesGeometry>(builder.build(), renderer_);
-  DrawVertices(geom, flutter::DlBlendMode::kSrcOver, path_paint);
-  Transform(matrix);
+  auto contents = ShadowVerticesContents::Make(&geometry, paint.color);
+  Entity entity;
+  entity.SetContents(contents);
+  AddRenderEntityToCurrentPass(entity);
 
   return true;
 }

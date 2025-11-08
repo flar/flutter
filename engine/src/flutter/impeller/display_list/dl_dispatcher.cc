@@ -913,7 +913,7 @@ void DlDispatcherBase::drawShadow(const DlPath& path,
       Matrix::MakeTranslation(Vector2(0, -occluder_z * light_position.y)));
 
   // SimplifyOrDrawPath(GetCanvas(), path, paint);
-  GetCanvas().DrawShadow(path, elevation, paint);
+  GetCanvas().DrawShadow(path, occluder_z, paint);
   AUTO_DEPTH_CHECK();
 
   GetCanvas().Restore();

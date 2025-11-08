@@ -18,15 +18,11 @@ namespace impeller {
 /// blend mode.
 class ShadowVerticesContents final : public Contents {
  public:
-  ShadowVerticesContents();
-
-  ~ShadowVerticesContents() override;
-
-  void SetGeometry(std::shared_ptr<ShadowPathGeometry> geometry);
+  static std::shared_ptr<ShadowVerticesContents> Make(
+      const ShadowPathGeometry* geometry,
+      Color shadow_color);
 
   void SetEffectTransform(Matrix transform);
-
-  void SetShadowColor(Color shadow_color);
 
   // |Contents|
   std::optional<Rect> GetCoverage(const Entity& entity) const override;
@@ -36,8 +32,13 @@ class ShadowVerticesContents final : public Contents {
               const Entity& entity,
               RenderPass& pass) const override;
 
+  ShadowVerticesContents(const ShadowPathGeometry* geometry,
+                         Color shadow_color);
+
+  ~ShadowVerticesContents() override;
+
  private:
-  std::shared_ptr<ShadowPathGeometry> geometry_;
+  const ShadowPathGeometry* geometry_;
   Matrix inverse_matrix_;
   Color shadow_color_;
 

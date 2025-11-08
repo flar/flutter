@@ -35,13 +35,14 @@ void DrawShadowMesh(DisplayListBuilder& builder,
   DlPaint paint;
   paint.setDrawStyle(DlDrawStyle::kStroke);
   bool should_optimize = path.IsConvex();
-  paint.setColor(use_skia && should_optimize ? DlColor::kGreen()
-                                             : DlColor::kRed());
+  Point shadow_translate;
+  Point path_translate = Point(0, elevation * dpr * 0.5f);
 
   if (use_skia) {
 #if EXPORT_SKIA_SHADOW
     shadow_vertices =
         ShadowPathGeometry::MakeAmbientShadowVerticesSkia(path, elevation, {});
+    paint.setColor(should_optimize ? DlColor::kDarkGreen() : DlColor::kRed());
 #else
     return;
 #endif
@@ -50,11 +51,13 @@ void DrawShadowMesh(DisplayListBuilder& builder,
     shadow_vertices = ShadowPathGeometry::MakeAmbientShadowVertices(
         tessellator, path, elevation, {});
     EXPECT_EQ(shadow_vertices != nullptr, should_optimize);
+    shadow_translate = path_translate;
+    paint.setColor(DlColor::kDarkGrey());
   }
 
-  builder.Save();
-  builder.Translate(0, elevation * dpr * 0.5f);
   if (shadow_vertices) {
+    builder.Save();
+    builder.Translate(shadow_translate.x, shadow_translate.y);
     auto indices = shadow_vertices->GetIndices();
     auto vertices = shadow_vertices->GetVertices();
     DlPathBuilder mesh_builder;
@@ -66,8 +69,11 @@ void DrawShadowMesh(DisplayListBuilder& builder,
     }
     DlPath mesh_path = mesh_builder.TakePath();
     builder.DrawPath(mesh_path, paint);
+    builder.Restore();
   }
 
+  builder.Save();
+  builder.Translate(path_translate.x, path_translate.y);
   paint.setColor(DlColor::kPurple());
   builder.DrawPath(path, paint);
   builder.Restore();
@@ -78,20 +84,28 @@ void DrawShadowAndCompareMeshes(DisplayListBuilder& builder,
                                 Scalar elevation,
                                 Scalar dpr) {
   builder.DrawShadow(path, DlColor::kBlue(), elevation, true, dpr);
-  DrawShadowMesh(builder, path, elevation, dpr, false);
-  builder.Translate(0, 300);
-  DrawShadowMesh(builder, path, elevation, dpr, true);
-  DrawShadowMesh(builder, path, elevation, dpr, false);
-  builder.Translate(0, -300);
+
+  DlPathBuilder path_builder;
+  path_builder.AddPath(path);
+  // A single line contour won't make any visible change to the shadow,
+  // but none of the shadow to mesh converters will touch a path that
+  // has multiple contours so this path should always default to the
+  // general shadow code based on a blur filter.
+  path_builder.MoveTo(DlPoint(0, 0));
+  path_builder.LineTo(DlPoint(1, 1));
+  DlPath complex_path = path_builder.TakePath();
 
   builder.Translate(300, 0);
+  builder.DrawShadow(complex_path, DlColor::kBlue(), elevation, true, dpr);
+  builder.Translate(-300, 0);
 
-  builder.DrawShadow(path, DlColor::kBlue(), elevation, true, dpr);
-  DrawShadowMesh(builder, path, elevation, dpr, true);
   builder.Translate(0, 300);
+  builder.DrawShadow(path, DlColor::kBlue(), elevation, true, dpr);
   DrawShadowMesh(builder, path, elevation, dpr, false);
+  builder.Translate(300, 0);
+  builder.DrawShadow(complex_path, DlColor::kBlue(), elevation, true, dpr);
   DrawShadowMesh(builder, path, elevation, dpr, true);
-  builder.Translate(0, -300);
+  builder.Translate(-300, -300);
 }
 }  // namespace
 
@@ -437,7 +451,7 @@ TEST_P(AiksTest, DrawShadowCanOptimizeWithExtraneousMoveTos) {
   ASSERT_TRUE(OpenPlaygroundHere(dl));
 }
 
-TEST_P(AiksTest, DrawShadowCanOptimizeWithExtraColinearVertices) {
+TEST_P(AiksTest, DrawShadowCanOptimizeClockwiseWithExtraColinearVertices) {
   DisplayListBuilder builder;
   builder.Clear(DlColor::kWhite());
   builder.Scale(GetContentScale().x, GetContentScale().y);
@@ -448,9 +462,33 @@ TEST_P(AiksTest, DrawShadowCanOptimizeWithExtraColinearVertices) {
   path_builder.MoveTo(DlPoint(200, 100));
   path_builder.LineTo(DlPoint(250, 200));
   path_builder.LineTo(DlPoint(300, 300));
-  path_builder.LineTo(DlPoint(100, 300));
+  path_builder.LineTo(DlPoint(200, 300));
   path_builder.LineTo(DlPoint(100, 300));
   path_builder.LineTo(DlPoint(150, 200));
+  path_builder.Close();
+  DlPath path = path_builder.TakePath();
+
+  DrawShadowAndCompareMeshes(builder, path, elevation, dpr);
+
+  auto dl = builder.Build();
+  ASSERT_TRUE(OpenPlaygroundHere(dl));
+}
+
+TEST_P(AiksTest,
+       DrawShadowCanOptimizeCounterClockwiseWithExtraColinearVertices) {
+  DisplayListBuilder builder;
+  builder.Clear(DlColor::kWhite());
+  builder.Scale(GetContentScale().x, GetContentScale().y);
+  Scalar dpr = std::max(GetContentScale().x, GetContentScale().y);
+  Scalar elevation = 30.0f;
+
+  DlPathBuilder path_builder;
+  path_builder.MoveTo(DlPoint(200, 100));
+  path_builder.LineTo(DlPoint(150, 200));
+  path_builder.LineTo(DlPoint(100, 300));
+  path_builder.LineTo(DlPoint(200, 300));
+  path_builder.LineTo(DlPoint(300, 300));
+  path_builder.LineTo(DlPoint(250, 200));
   path_builder.Close();
   DlPath path = path_builder.TakePath();
 

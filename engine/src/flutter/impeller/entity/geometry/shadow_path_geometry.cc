@@ -52,13 +52,18 @@ class PolygonInfo : impeller::PathTessellator::VertexWriter {
 
  private:
   static constexpr Scalar GetPenumbraSizeForHeight(Scalar occluder_height) {
-    return occluder_height * 0.5f;
+    return occluder_height;
   }
 
   static constexpr Scalar GetUmbraSizeForHeight(Scalar occluder_height) {
-    Scalar blur_radius = occluder_height / 128.0f;
-    return blur_radius * GetPenumbraSizeForHeight(occluder_height);
+    return occluder_height;
   }
+
+  enum class PointClass {
+    kNonConvex,
+    kCollinear,
+    kConvex,
+  };
 
   const Scalar occluder_height_;
 
@@ -171,6 +176,12 @@ class PolygonInfo : impeller::PathTessellator::VertexWriter {
   std::vector<uint16_t> indices_;
   std::vector<Scalar> gaussians_;
 
+  bool Invalidate() {
+    // This method provides a stop point for debugging shadow conversion
+    // failures.
+    return is_valid_ = false;
+  }
+
   // |VertexWriter|
   void Write(Point point);
 
@@ -206,7 +217,7 @@ class PolygonInfo : impeller::PathTessellator::VertexWriter {
   //
   // Note that the area is only computed in order to finalize the centroid
   // point at the end.
-  bool ValidatePointAndUpdateCentroid(const Point& new_point);
+  PointClass ValidatePointAndUpdateCentroid(const Point& new_point);
 
   // Finalize the weighted centroid using the area calculated while the
   // path was being delivered.
@@ -219,8 +230,9 @@ class PolygonInfo : impeller::PathTessellator::VertexWriter {
   // Run through the pins and determine if they intersect each other
   // internally, whether they are completely obscured by other pins,
   // their new relative lengths if they defer to another pin at some
-  // depth, and which remaining pins are part of the umbra polygon.
-  void ResolveUmbraIntersections();
+  // depth, and which remaining pins are part of the umbra polygon and
+  // return the pointer to the first pin in the "umbra polygon".
+  UmbraPin* ResolveUmbraIntersections();
 
   // Structure to store the result of computing the intersection between
   // 2 pins, containing the point of intersection and the relative fractions
@@ -282,7 +294,7 @@ PolygonInfo::PolygonInfo(const impeller::PathSource& source,
                          const Matrix& matrix,
                          Scalar occluder_height,
                          const Tessellator::Trigs& trigs)
-    : occluder_height_(occluder_height), centroid_(0.0f, 0.0f), trigs_(trigs) {
+    : occluder_height_(occluder_height), trigs_(trigs) {
   Scalar scale = matrix.GetMaxBasisLengthXY();
 
   auto [point_count, contour_count] =
@@ -293,7 +305,6 @@ PolygonInfo::PolygonInfo(const impeller::PathSource& source,
   if (!is_valid_ || pins_.size() < 3 || direction_ == 0.0f ||
       shape_area_ == 0.0f) {
     // The shape was either invalid or empty.
-    is_valid_ = false;
     return;
   }
 
@@ -301,22 +312,32 @@ PolygonInfo::PolygonInfo(const impeller::PathSource& source,
 
   ComputePinDirectionsAndMinDistanceToCentroid();
 
-  ResolveUmbraIntersections();
+  umbra_vertices_head_ = ResolveUmbraIntersections();
+  if (umbra_vertices_head_ == nullptr) {
+    // The Skia algorithm from which this was taken tries to fake an
+    // umbra polygon that is 95% from the path polygon to the centroid,
+    // but that result does not look great. If we run into this case
+    // a lot we should either beef up the ResolveIntersections algorithm
+    // or find a better approximation.
+    Invalidate();
+    return;
+  }
 
   ComputeMesh();
 }
 
 // Enter a new point for the polygon approximation of the shape. Points are
 // normalized to a device subpixel grid based on |kSubPixelCount|, duplicates
-// at that sub-pixel grid are ignored, and the centroid is updated from
-// the remaining non-duplicate grid points.
+// at that sub-pixel grid are ignored, collinear points are reduced to just
+// the endpoints, and the centroid is updated from the remaining non-duplicate
+// grid points.
 void PolygonInfo::Write(Point point) {
-  if (path_ended_) {
-    is_valid_ = false;
+  if (!is_valid_) {
     return;
   }
 
-  if (!is_valid_) {
+  if (path_ended_) {
+    Invalidate();
     return;
   }
 
@@ -332,9 +353,15 @@ void PolygonInfo::Write(Point point) {
       return;
     }
 
-    if (!ValidatePointAndUpdateCentroid(point)) {
-      FML_DCHECK(!is_valid_);
-      return;
+    switch (ValidatePointAndUpdateCentroid(point)) {
+      case PointClass::kConvex:
+        break;
+      case PointClass::kCollinear:
+        pins_.pop_back();
+        break;
+      case PointClass::kNonConvex:
+        Invalidate();
+        return;
     }
   }
 
@@ -351,12 +378,12 @@ void PolygonInfo::Write(Point point) {
 // going forward we don't need the extra pin in the shape so we verify that
 // it is a duplicate and then we delete it.
 void PolygonInfo::EndContour() {
-  if (path_ended_) {
-    is_valid_ = false;
+  if (!is_valid_) {
     return;
   }
 
-  if (!is_valid_) {
+  if (path_ended_) {
+    Invalidate();
     return;
   }
 
@@ -389,38 +416,45 @@ bool PolygonInfo::CheckEdgeDirection(const Vector2 edge_vector) {
 // - Ensure that all vertices turn the same direction from the perspective
 //   of the first point. (No "going around twice".)
 // - Accumulate data to compute the centroid
-bool PolygonInfo::ValidatePointAndUpdateCentroid(const Point& new_point) {
+PolygonInfo::PointClass PolygonInfo::ValidatePointAndUpdateCentroid(
+    const Point& new_point) {
   if (!is_valid_) {
-    return false;
+    return PointClass::kNonConvex;
   }
 
   if (pins_.size() < 2u) {
-    return true;
+    return PointClass::kConvex;
   }
 
   const Point& prev = pins_.back().path_vertex;
   if (!CheckEdgeDirection(new_point - prev)) {
-    return is_valid_ = false;
+    return PointClass::kNonConvex;
   }
 
   // direction_ is always normalized to one of these values.
   FML_DCHECK(direction_ == 0.0f ||  //
              direction_ == 1.0f ||  //
              direction_ == -1.0f);
+
+  PointClass result = PointClass::kConvex;
+
   // We can only perform concavity detection once we have a direction.
-  if (direction_ != 0.0f) {
+  if (pins_.size() >= 2u) {
     // Note that if there are only 2 points in the path, the direction_
     // will not yet have been determined and this check computes the same
     // values as the global check below anyway.
-    FML_DCHECK(pins_.size() > 2u);
+    // FML_DCHECK(pins_.size() > 2u);
 
     // Check that each triplet of points (this, prev, prev_prev) turn the
     // same direction.
     const Point& prev_prev = pins_.end()[-2].path_vertex;
     Vector2 v0 = prev - prev_prev;
     Vector2 v1 = new_point - prev_prev;
-    if (v0.Cross(v1) * direction_ < 0) {
-      return is_valid_ = false;
+    Scalar cross = v0.Cross(v1);
+    if (cross == 0) {
+      result = PointClass::kCollinear;
+    } else if (cross * direction_ < 0) {
+      return PointClass::kNonConvex;
     }
   }
 
@@ -428,6 +462,9 @@ bool PolygonInfo::ValidatePointAndUpdateCentroid(const Point& new_point) {
   Vector2 v0 = prev - first;
   Vector2 v1 = new_point - first;
   Scalar quad_area = v0.Cross(v1);
+  if (quad_area == 0) {
+    return result;
+  }
 
   // convexity check for whole path which can detect if we turn more than
   // 360 degrees and start going the other way wrt the start point, but
@@ -435,7 +472,7 @@ bool PolygonInfo::ValidatePointAndUpdateCentroid(const Point& new_point) {
   if (direction_ == 0) {
     direction_ = std::copysign(1.0f, quad_area);
   } else if (quad_area * direction_ < 0) {
-    return is_valid_ = false;
+    return PointClass::kNonConvex;
   }
 
   // We are computing the centroid using a weighted average of all of the
@@ -478,7 +515,7 @@ bool PolygonInfo::ValidatePointAndUpdateCentroid(const Point& new_point) {
   centroid_ += (v0 + v1) * quad_area;
   shape_area_ += quad_area;
 
-  return true;
+  return result;
 }
 
 void PolygonInfo::FinalizeCentroid() {
@@ -517,8 +554,20 @@ void PolygonInfo::ComputePinDirectionsAndMinDistanceToCentroid() {
     p_prev_pin = p_curr_pin;
   }
 
+  static constexpr auto kTolerance = 1.0e-2f;
   Scalar umbra_size = std::sqrt(min_umbra_squared);
-  umbra_gaussian_ = umbra_size / desired_umbra_size;
+  if (umbra_size < desired_umbra_size + kTolerance) {
+    // if the umbra would collapse, we back off a bit on the inner blur and
+    // adjust the alpha
+    auto newInset = umbra_size - kTolerance;
+    auto ratio = 0.5f * (newInset / desired_umbra_size + 1);
+    FML_DCHECK(std::isfinite(ratio));
+    // they aren't PMColors, but the interpolation algorithm is the same
+    umbra_gaussian_ = ratio;
+    umbra_size = newInset;
+  } else {
+    FML_DCHECK(umbra_gaussian_ == 1.0f);
+  }
 
   // Second pass, fill out the pin data with the final umbra size.
   //
@@ -688,7 +737,7 @@ int PolygonInfo::ComputeSide(const Point& p0,
 // This method was converted nearly verbatim from the Skia source files
 // SkShadowTessellator.cpp and SkPolyUtils.cpp, except for variable
 // naming and differences in the methods on Point and Vertex2.
-void PolygonInfo::ResolveUmbraIntersections() {
+PolygonInfo::UmbraPin* PolygonInfo::ResolveUmbraIntersections() {
   UmbraPin* p_head_pin = &pins_.front();
   UmbraPin* p_curr_pin = p_head_pin;
   UmbraPin* p_prev_pin = p_curr_pin->pPrev;
@@ -699,8 +748,7 @@ void PolygonInfo::ResolveUmbraIntersections() {
 
   while (p_head_pin && p_prev_pin != p_curr_pin) {
     if (--allowed_iterations == 0) {
-      is_valid_ = false;
-      return;
+      return nullptr;
     }
 
     std::optional<PinIntersection> intersection =
@@ -754,8 +802,7 @@ void PolygonInfo::ResolveUmbraIntersections() {
   }
 
   if (!p_head_pin) {
-    is_valid_ = false;
-    return;
+    return nullptr;
   }
 
   // Now remove any duplicates from the umbra polygon. The head pin is
@@ -777,11 +824,7 @@ void PolygonInfo::ResolveUmbraIntersections() {
     FML_DCHECK(p_prev_pin == p_curr_pin->pPrev);
   }
 
-  if (umbra_vertices >= 3u) {
-    umbra_vertices_head_ = p_head_pin;
-  } else {
-    is_valid_ = false;
-  }
+  return umbra_vertices >= 3u ? p_head_pin : nullptr;
 }
 
 // The mesh computed connects all of the points in two rings. The outermost
@@ -816,8 +859,7 @@ void PolygonInfo::ResolveUmbraIntersections() {
 //   vertex following it, plus we insert extra vertices on the outer ring
 //   to turn the corners beteween the projected segments.
 void PolygonInfo::ComputeMesh() {
-  if (!is_valid_ || !umbra_vertices_head_) {
-    is_valid_ = false;
+  if (!is_valid_) {
     return;
   }
 
@@ -934,6 +976,7 @@ void PolygonInfo::PopulateUmbraVertices() {
   // We should be having the first crack at the vertex list, filling it with
   // the centroid, the umbra vertices, and the mesh connecting those into the
   // central core of the shadow.
+  FML_DCHECK(umbra_vertices_head_ != nullptr);
   FML_DCHECK(vertices_.empty());
   FML_DCHECK(gaussians_.empty());
   FML_DCHECK(indices_.empty());
@@ -1061,16 +1104,21 @@ bool ShadowPathGeometry::CanRender() const {
   return shadow_vertices_ != nullptr;
 }
 
+bool ShadowPathGeometry::IsEmpty() const {
+  return shadow_vertices_ != nullptr && shadow_vertices_->IsEmpty();
+}
+
 const std::shared_ptr<ShadowVertices>& ShadowPathGeometry::GetShadowVertices()
     const {
   return shadow_vertices_;
 }
 
-std::optional<Rect> ShadowPathGeometry::GetBounds() const {
+std::optional<Rect> ShadowPathGeometry::GetCoverage(
+    const Matrix& transform) const {
   return shadow_vertices_ ? shadow_vertices_->GetBounds() : std::nullopt;
 }
 
-GeometryResult ShadowPathGeometry::GetPositionGaussianBuffer(
+GeometryResult ShadowPathGeometry::GetPositionBuffer(
     const ContentContext& renderer,
     const Entity& entity,
     RenderPass& pass) const {
@@ -1107,7 +1155,7 @@ GeometryResult ShadowPathGeometry::GetPositionGaussianBuffer(
               .vertex_count = index_count,
               .index_type = IndexType::k16bit,
           },
-      .transform = entity.GetShaderTransform(pass),
+      .transform = pass.GetOrthographicTransform(),
   };
 }
 
@@ -1135,10 +1183,14 @@ ShadowPathGeometry::MakeAmbientShadowVerticesSkia(const flutter::DlPath& path,
       matrix.m[3], matrix.m[7], matrix.m[15]
       // clang-format on
   );
-  SkVector3 z_plane = {0, 0, occluder_height};
+  SkPoint3 z_plane = {0, 0, occluder_height};
+  SkPoint3 light_pos = {0, -1, 1};
+  SkScalar light_radius = 800 / 600;
   bool transparent = true;
-  auto sk_vertices = SkShadowTessellator::MakeAmbient(path.GetSkPath(), ctm,
-                                                      z_plane, transparent);
+  bool directional = true;
+  auto sk_vertices =
+      SkShadowTessellator::MakeSpot(path.GetSkPath(), ctm, z_plane, light_pos,
+                                    light_radius, transparent, directional);
   if (sk_vertices == nullptr) {
     return nullptr;
   }

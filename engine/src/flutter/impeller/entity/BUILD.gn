@@ -174,6 +174,8 @@ impeller_component("entity") {
     "contents/radial_gradient_contents.h",
     "contents/runtime_effect_contents.cc",
     "contents/runtime_effect_contents.h",
+    "contents/shadow_vertices_contents.cc",
+    "contents/shadow_vertices_contents.h",
     "contents/solid_color_contents.cc",
     "contents/solid_color_contents.h",
     "contents/solid_rrect_blur_contents.cc",

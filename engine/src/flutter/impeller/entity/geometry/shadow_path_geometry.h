@@ -60,15 +60,18 @@ class ShadowPathGeometry : public Geometry {
                      const PathSource& source,
                      Scalar occluder_height);
 
-  GeometryResult GetPositionGaussianBuffer(const ContentContext& renderer,
-                                           const Entity& entity,
-                                           RenderPass& pass) const;
+  GeometryResult GetPositionBuffer(const ContentContext& renderer,
+                                   const Entity& entity,
+                                   RenderPass& pass) const override;
 
   bool CanRender() const;
 
+  /// Returns true if this shadow has no effect, is not visible.
+  bool IsEmpty() const;
+
   const std::shared_ptr<ShadowVertices>& GetShadowVertices() const;
 
-  std::optional<Rect> GetBounds() const;
+  std::optional<Rect> GetCoverage(const Matrix& transform) const override;
 
   static std::shared_ptr<ShadowVertices> MakeAmbientShadowVertices(
       Tessellator& tessellator,

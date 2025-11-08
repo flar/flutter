@@ -131,7 +131,8 @@ TEST(ShadowPathGeometryTest, EmptyPathTest) {
       ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
                                                     matrix);
 
-  EXPECT_EQ(shadow_vertices, nullptr);
+  ASSERT_NE(shadow_vertices, nullptr);
+  EXPECT_TRUE(shadow_vertices->IsEmpty());
 }
 
 TEST(ShadowPathGeometryTest, MoveToOnlyTest) {
@@ -146,7 +147,8 @@ TEST(ShadowPathGeometryTest, MoveToOnlyTest) {
       ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
                                                     matrix);
 
-  EXPECT_EQ(shadow_vertices, nullptr);
+  ASSERT_NE(shadow_vertices, nullptr);
+  EXPECT_TRUE(shadow_vertices->IsEmpty());
 }
 
 TEST(ShadowPathGeometryTest, OnePathSegmentTest) {
@@ -162,7 +164,8 @@ TEST(ShadowPathGeometryTest, OnePathSegmentTest) {
       ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
                                                     matrix);
 
-  EXPECT_EQ(shadow_vertices, nullptr);
+  ASSERT_NE(shadow_vertices, nullptr);
+  EXPECT_TRUE(shadow_vertices->IsEmpty());
 }
 
 TEST(ShadowPathGeometryTest, TwoColinearSegmentsTest) {
@@ -179,7 +182,8 @@ TEST(ShadowPathGeometryTest, TwoColinearSegmentsTest) {
       ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
                                                     matrix);
 
-  EXPECT_EQ(shadow_vertices, nullptr);
+  ASSERT_NE(shadow_vertices, nullptr);
+  EXPECT_TRUE(shadow_vertices->IsEmpty());
 }
 
 TEST(ShadowPathGeometryTest, EmptyRectTest) {
@@ -198,7 +202,8 @@ TEST(ShadowPathGeometryTest, EmptyRectTest) {
       ShadowPathGeometry::MakeAmbientShadowVertices(tessellator, path, height,
                                                     matrix);
 
-  EXPECT_EQ(shadow_vertices, nullptr);
+  ASSERT_NE(shadow_vertices, nullptr);
+  EXPECT_TRUE(shadow_vertices->IsEmpty());
 }
 
 TEST(ShadowPathGeometryTest, ClockwiseRectTest) {
@@ -219,11 +224,11 @@ TEST(ShadowPathGeometryTest, ClockwiseRectTest) {
 
   ASSERT_NE(shadow_vertices, nullptr);
   EXPECT_FALSE(shadow_vertices->IsEmpty());
-  EXPECT_EQ(shadow_vertices->GetVertexCount(), 26u);
-  EXPECT_EQ(shadow_vertices->GetIndexCount(), 84u);
-  EXPECT_EQ(shadow_vertices->GetVertices().size(), 26u);
-  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 26u);
-  EXPECT_EQ(shadow_vertices->GetIndices().size(), 84u);
+  EXPECT_EQ(shadow_vertices->GetVertexCount(), 34u);
+  EXPECT_EQ(shadow_vertices->GetIndexCount(), 108u);
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 34u);
+  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 34u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 108u);
   EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
   EXPECT_EQ(CountDuplicateVertices(shadow_vertices), 0u);
   EXPECT_EQ(CountDuplicateTriangles(shadow_vertices), 0u);
@@ -257,11 +262,11 @@ TEST(ShadowPathGeometryTest, CounterClockwiseRectTest) {
 
   ASSERT_NE(shadow_vertices, nullptr);
   EXPECT_FALSE(shadow_vertices->IsEmpty());
-  EXPECT_EQ(shadow_vertices->GetVertexCount(), 26u);
-  EXPECT_EQ(shadow_vertices->GetIndexCount(), 84u);
-  EXPECT_EQ(shadow_vertices->GetVertices().size(), 26u);
-  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 26u);
-  EXPECT_EQ(shadow_vertices->GetIndices().size(), 84u);
+  EXPECT_EQ(shadow_vertices->GetVertexCount(), 34u);
+  EXPECT_EQ(shadow_vertices->GetIndexCount(), 108u);
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 34u);
+  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 34u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 108u);
   EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
   EXPECT_EQ(CountDuplicateVertices(shadow_vertices), 0u);
   EXPECT_EQ(CountDuplicateTriangles(shadow_vertices), 0u);
@@ -283,11 +288,11 @@ TEST(ShadowPathGeometryTest, ScaledRectTest) {
 
   ASSERT_NE(shadow_vertices, nullptr);
   EXPECT_FALSE(shadow_vertices->IsEmpty());
-  EXPECT_EQ(shadow_vertices->GetVertexCount(), 26u);
-  EXPECT_EQ(shadow_vertices->GetIndexCount(), 84u);
-  EXPECT_EQ(shadow_vertices->GetVertices().size(), 26u);
-  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 26u);
-  EXPECT_EQ(shadow_vertices->GetIndices().size(), 84u);
+  EXPECT_EQ(shadow_vertices->GetVertexCount(), 34u);
+  EXPECT_EQ(shadow_vertices->GetIndexCount(), 108u);
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 34u);
+  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 34u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 108u);
   EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
   EXPECT_EQ(CountDuplicateVertices(shadow_vertices), 0u);
   EXPECT_EQ(CountDuplicateTriangles(shadow_vertices), 0u);
@@ -331,11 +336,11 @@ TEST(ShadowPathGeometryTest, RoundRectTest) {
 
   ASSERT_NE(shadow_vertices, nullptr);
   EXPECT_FALSE(shadow_vertices->IsEmpty());
-  EXPECT_EQ(shadow_vertices->GetVertexCount(), 58u);
-  EXPECT_EQ(shadow_vertices->GetIndexCount(), 216u);
-  EXPECT_EQ(shadow_vertices->GetVertices().size(), 58u);
-  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 58u);
-  EXPECT_EQ(shadow_vertices->GetIndices().size(), 216u);
+  EXPECT_EQ(shadow_vertices->GetVertexCount(), 51u);
+  EXPECT_EQ(shadow_vertices->GetIndexCount(), 156u);
+  EXPECT_EQ(shadow_vertices->GetVertices().size(), 51u);
+  EXPECT_EQ(shadow_vertices->GetGaussians().size(), 51u);
+  EXPECT_EQ(shadow_vertices->GetIndices().size(), 156u);
   EXPECT_EQ((shadow_vertices->GetIndices().size() % 3u), 0u);
   EXPECT_EQ(CountDuplicateVertices(shadow_vertices), 0u);
   EXPECT_EQ(CountDuplicateTriangles(shadow_vertices), 0u);

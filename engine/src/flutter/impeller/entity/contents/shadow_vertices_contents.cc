@@ -23,26 +23,26 @@ namespace impeller {
 //------------------------------------------------------
 // ShadowVerticesContents
 
-ShadowVerticesContents::ShadowVerticesContents() {}
+ShadowVerticesContents::ShadowVerticesContents(
+    const ShadowPathGeometry* geometry,
+    Color shadow_color)
+    : geometry_(geometry), shadow_color_(shadow_color) {}
 
 ShadowVerticesContents::~ShadowVerticesContents() {}
 
-void ShadowVerticesContents::SetGeometry(
-    std::shared_ptr<ShadowPathGeometry> geometry) {
-  geometry_ = std::move(geometry);
+std::shared_ptr<ShadowVerticesContents> ShadowVerticesContents::Make(
+    const ShadowPathGeometry* geometry,
+    Color shadow_color) {
+  return std::make_shared<ShadowVerticesContents>(geometry, shadow_color);
 }
 
 std::optional<Rect> ShadowVerticesContents::GetCoverage(
     const Entity& entity) const {
-  return geometry_->GetBounds();
+  return geometry_->GetCoverage({});
 }
 
 void ShadowVerticesContents::SetEffectTransform(Matrix transform) {
   inverse_matrix_ = transform.Invert();
-}
-
-void ShadowVerticesContents::SetShadowColor(Color shadow_color) {
-  shadow_color_ = shadow_color;
 }
 
 bool ShadowVerticesContents::Render(const ContentContext& renderer,
@@ -52,7 +52,7 @@ bool ShadowVerticesContents::Render(const ContentContext& renderer,
   using FS = ShadowVerticesFragmentShader;
 
   GeometryResult geometry_result =
-      geometry_->GetPositionGaussianBuffer(renderer, entity, pass);
+      geometry_->GetPositionBuffer(renderer, entity, pass);
   if (geometry_result.vertex_buffer.vertex_count == 0) {
     return true;
   }
@@ -73,7 +73,7 @@ bool ShadowVerticesContents::Render(const ContentContext& renderer,
 
   frame_info.mvp = geometry_result.transform;
 
-  frag_info.shadow_color = shadow_color_;
+  frag_info.shadow_color = shadow_color_.Premultiply();
 
   auto& host_buffer = renderer.GetTransientsDataBuffer();
   FS::BindFragInfo(pass, host_buffer.EmplaceUniform(frag_info));
