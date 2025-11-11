@@ -139,6 +139,7 @@ class PolygonInfo : impeller::PathTessellator::VertexWriter {
 
   std::vector<UmbraPin> pins_;
   UmbraPin* umbra_vertices_head_ = nullptr;
+  size_t umbra_polygon_count_ = 0u;
 
   bool is_valid_ = true;   // aka single convex contour
   bool is_empty_ = false;  // is there anything to cast a shadow?
@@ -824,7 +825,12 @@ PolygonInfo::UmbraPin* PolygonInfo::ResolveUmbraIntersections() {
     FML_DCHECK(p_prev_pin == p_curr_pin->pPrev);
   }
 
-  return umbra_vertices >= 3u ? p_head_pin : nullptr;
+  if (umbra_vertices < 3u) {
+    return nullptr;
+  }
+
+  umbra_polygon_count_ = umbra_vertices;
+  return p_head_pin;
 }
 
 // The mesh computed connects all of the points in two rings. The outermost
@@ -862,6 +868,20 @@ void PolygonInfo::ComputeMesh() {
   if (!is_valid_) {
     return;
   }
+
+  // Centroid and umbra polygon...
+  size_t vertex_count = umbra_polygon_count_ + 1u;
+  size_t triangle_count = umbra_polygon_count_;
+
+  // Penumbra corners - likely many more fan vertices than estimated...
+  size_t penumbra_count = pins_.size() * 2;  // 2 perp at each vertex.
+  penumbra_count += trigs_.size() * 4;       // total 360 degrees of fans.
+  vertex_count += penumbra_count;
+  triangle_count += penumbra_count;
+
+  vertices_.reserve(vertex_count);
+  gaussians_.reserve(vertex_count);
+  indices_.reserve(triangle_count * 3);
 
   // First we populate the umbra_vertex and umbra_index of each pin with its
   // nearest point on the umbra polygon (the linked list computed earlier).
