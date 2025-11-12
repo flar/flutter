@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "impeller/entity/contents/contents.h"
+#include "impeller/entity/contents/solid_rrect_blur_contents.h"
 #include "impeller/entity/entity.h"
 #include "impeller/entity/geometry/shadow_path_geometry.h"
 #include "impeller/geometry/color.h"
@@ -16,13 +17,15 @@ namespace impeller {
 
 /// A vertices contents for (optional) per-color vertices + texture and any
 /// blend mode.
-class ShadowVerticesContents final : public Contents {
+class ShadowVerticesContents final : public SolidBlurContents {
  public:
   static std::shared_ptr<ShadowVerticesContents> Make(
-      const ShadowPathGeometry* geometry,
-      Color shadow_color);
+      const ShadowPathGeometry* geometry);
 
   void SetEffectTransform(Matrix transform);
+
+  // |SolidBlurContents|
+  void SetColor(Color color) override;
 
   // |Contents|
   std::optional<Rect> GetCoverage(const Entity& entity) const override;
@@ -32,8 +35,7 @@ class ShadowVerticesContents final : public Contents {
               const Entity& entity,
               RenderPass& pass) const override;
 
-  ShadowVerticesContents(const ShadowPathGeometry* geometry,
-                         Color shadow_color);
+  explicit ShadowVerticesContents(const ShadowPathGeometry* geometry);
 
   ~ShadowVerticesContents() override;
 
